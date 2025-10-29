@@ -7,9 +7,9 @@ spring:
 
   datasource:
     # Conexión dinámica usando las variables de entorno de Railway
-    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: ${MYSQLUSER}
-    password: ${MYSQLPASSWORD}
+    url: jdbc:mysql://shuttle.proxy.rlwy.net:12180/railway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: yTDceDibDvffRTXVLvFFDALGrDvGzGly
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
