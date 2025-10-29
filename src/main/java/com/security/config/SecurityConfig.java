@@ -61,11 +61,12 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // ✅ Orígenes específicos para desarrollo
+        // ✅ Orígenes específicos para desarrollo y producción
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:3000",
                 "http://localhost:8080",
-                "http://localhost:4200"));
+                "http://localhost:4200",
+                "https://fronlogin-production.up.railway.app"));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
