@@ -1,0 +1,74 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: auth-system
+
+  datasource:
+    # Railway proporciona la URL completa con todos los parámetros necesarios
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/security_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    username: ${DATABASE_USERNAME:security_user}
+    password: ${DATABASE_PASSWORD:Security123!}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:pepemontgomez@gmail.com}
+    password: ${MAIL_PASSWORD:vpblorrxuxcybrmc}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+      expiration: 86400000 # 24 hours
+      refresh-expiration: 604800000 # 7 days
+
+    two-factor:
+      issuer: "AuthSystem"
+
+    verification:
+      email:
+        expiration: 86400000 # 24 hours
+      sms:
+        expiration: 300000 # 5 minutes
+        max-attempts: 3
+
+    rate-limiting:
+      max-login-attempts: 5
+      lockout-duration: 900000 # 15 minutes
+
+  base-url: ${FRONTEND_URL:http://localhost:4200}
+
+  notification:
+    sms:
+      provider: sinch
+      project-id: ${SINCH_PROJECT_ID:4696842a27654b618a9609091afdb8d9}
+      access-key-id: ${SINCH_ACCESS_KEY_ID:ea55ba6d-0381-4df8-b66b-4afff2ffbeab}
+      secret-key: ${SINCH_SECRET_KEY:39cb2c4b8b87402ba17fb4bbf0fbac45}
+      from-number: ${SINCH_FROM_NUMBER:+447418630656}
+      dev-mode: false
+
+logging:
+  level:
+    com.security: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.boot.web.servlet: DEBUG
