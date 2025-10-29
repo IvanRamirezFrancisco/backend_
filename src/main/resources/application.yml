@@ -6,10 +6,10 @@ spring:
     name: auth-system
 
   datasource:
-    # Railway proporciona la URL que necesita ser convertida de mysql:// a jdbc:mysql://
-    url: jdbc:mysql://tramway.proxy.rlwy.net:20834/railway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    # Railway MySQL Database - usando la URL pública para acceso desde Railway
+    url: jdbc:mysql://shuttle.proxy.rlwy.net:12180/railway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
-    password: yFgNSjegzGmdLkZdYZdbCUtaSsAVHhfO
+    password: yTDceDibDvffRTXVLvFFDALGrDvGzGly
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
