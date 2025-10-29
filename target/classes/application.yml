@@ -5,14 +5,13 @@ spring:
   application:
     name: auth-system
 
-  datasource:
-    # Railway MySQL Database - usando la URL pública para acceso desde Railway
-    url: jdbc:mysql://shuttle.proxy.rlwy.net:12180/railway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
-    password: yTDceDibDvffRTXVLvFFDALGrDvGzGly
+datasource:
+    # Conexión dinámica usando las variables de entorno de Railway
+    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQLUSER}
+    password: ${MYSQLPASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
-
-  jpa:
+jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
@@ -24,8 +23,10 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME:pepemontgomez@gmail.com}
-    password: ${MAIL_PASSWORD:vpblorrxuxcybrmc}
+    # ADVERTENCIA: Los valores por defecto han sido removidos por seguridad.
+    # Debes configurar MAIL_USERNAME y MAIL_PASSWORD en las variables de Railway.
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -36,7 +37,9 @@ spring:
 app:
   security:
     jwt:
-      secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+      # ADVERTENCIA: El secreto por defecto ha sido removido.
+      # Debes configurar JWT_SECRET en las variables de Railway.
+      secret: ${JWT_SECRET}
       expiration: 86400000 # 24 hours
       refresh-expiration: 604800000 # 7 days
 
@@ -54,16 +57,19 @@ app:
       max-login-attempts: 5
       lockout-duration: 900000 # 15 minutes
 
+  # El valor por defecto para localhost está bien para desarrollo local
   base-url: ${FRONTEND_URL:http://localhost:4200}
 
   notification:
     sms:
       provider: sinch
-      project-id: ${SINCH_PROJECT_ID:4696842a27654b618a9609091afdb8d9}
-      access-key-id: ${SINCH_ACCESS_KEY_ID:ea55ba6d-0381-4df8-b66b-4afff2ffbeab}
-      secret-key: ${SINCH_SECRET_KEY:39cb2c4b8b87402ba17fb4bbf0fbac45}
-      from-number: ${SINCH_FROM_NUMBER:+447418630656}
-      dev-mode: false
+      # ADVERTENCIA: Los secretos por defecto han sido removidos.
+      # Debes configurar todas las variables SINCH_* en Railway.
+      project-id: ${SINCH_PROJECT_ID}
+      access-key-id: ${SINCH_ACCESS_KEY_ID}
+      secret-key: ${SINCH_SECRET_KEY}
+      from-number: ${SINCH_FROM_NUMBER}
+      dev-mode: false # Puedes cambiar esto a 'true' en Railway si es necesario
 
 logging:
   level:
