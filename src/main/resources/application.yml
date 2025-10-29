@@ -6,7 +6,6 @@ spring:
     name: auth-system
 
   datasource:
-    # Railway proporciona la URL completa con todos los parámetros necesarios
     url: jdbc:mysql://shuttle.proxy.rlwy.net:12180/railway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
     password: yTDceDibDvffRTXVLvFFDALGrDvGzGly
@@ -37,22 +36,22 @@ app:
   security:
     jwt:
       secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
-      expiration: 86400000 # 24 hours
-      refresh-expiration: 604800000 # 7 days
+      expiration: 86400000
+      refresh-expiration: 604800000
 
     two-factor:
       issuer: "AuthSystem"
 
     verification:
       email:
-        expiration: 86400000 # 24 hours
+        expiration: 86400000
       sms:
-        expiration: 300000 # 5 minutes
+        expiration: 300000
         max-attempts: 3
 
     rate-limiting:
       max-login-attempts: 5
-      lockout-duration: 900000 # 15 minutes
+      lockout-duration: 900000
 
   base-url: ${FRONTEND_URL:http://localhost:4200}
 
