@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = {"http://localhost:4200", "https://fronlogin-production.up.railway.app"})
+@CrossOrigin(origins = { "http://localhost:4200", "https://fronlogin-production.up.railway.app" })
 public class AuthController {
 
     @Autowired
