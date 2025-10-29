@@ -6,10 +6,9 @@ spring:
     name: auth-system
 
   datasource:
-    # Conexión dinámica usando las variables de entorno de Railway
-    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: ${MYSQLUSER}
-    password: ${MYSQLPASSWORD}
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/security_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    username: ${DATABASE_USERNAME:security_user}
+    password: ${DATABASE_PASSWORD:Security123!}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -24,9 +23,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    # Debes configurar MAIL_USERNAME y MAIL_PASSWORD en las variables de Railway.
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: ${MAIL_USERNAME:pepemontgomez@gmail.com}
+    password: ${MAIL_PASSWORD:vpblorrxuxcybrmc}
     properties:
       mail:
         smtp:
@@ -37,8 +35,7 @@ spring:
 app:
   security:
     jwt:
-      # Debes configurar JWT_SECRET en las variables de Railway.
-      secret: ${JWT_SECRET}
+      secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
       expiration: 86400000 # 24 hours
       refresh-expiration: 604800000 # 7 days
 
@@ -56,17 +53,16 @@ app:
       max-login-attempts: 5
       lockout-duration: 900000 # 15 minutes
 
-  # El valor por defecto para localhost está bien para desarrollo local
-  base-url: ${FRONTEND_URL:http://localhost:4200}
+  base-url: http://localhost:4200
 
   notification:
     sms:
       provider: sinch
-      # Debes configurar todas las variables SINCH_* en Railway.
-      project-id: ${SINCH_PROJECT_ID}
-      access-key-id: ${SINCH_ACCESS_KEY_ID}
-      secret-key: ${SINCH_SECRET_KEY}
-      from-number: ${SINCH_FROM_NUMBER}
+      project-id: 4696842a27654b618a9609091afdb8d9
+      access-key-id: ea55ba6d-0381-4df8-b66b-4afff2ffbeab
+      secret-key: 39cb2c4b8b87402ba17fb4bbf0fbac45
+      from-number: +447418630656
+      # Modo de desarrollo: false para envío real
       dev-mode: false
 
 logging:
