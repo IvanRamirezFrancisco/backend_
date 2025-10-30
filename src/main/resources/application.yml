@@ -21,18 +21,18 @@ spring:
         format_sql: true
 
   mail:
-    host: smtp.gmail.com
-    port: 465
-    username: ${MAIL_USERNAME:pepemontgomez@gmail.com}
-    password: ${MAIL_PASSWORD:vpblorrxuxcybrmc}
+    host: ${MAIL_HOST:smtp-relay.brevo.com}
+    port: ${MAIL_PORT:587}
+    username: ${BREVO_USER:test@example.com}
+    password: ${BREVO_PASSWORD:placeholder}
     properties:
       mail:
         smtp:
           auth: true
           ssl:
-            enable: true
-          starttls:
             enable: false
+          starttls:
+            enable: true
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000
