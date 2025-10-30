@@ -181,10 +181,10 @@ public class EmailService {
 
             Map<String, Object> emailData = new HashMap<>();
             emailData.put("from", "AuthSystem <onboarding@resend.dev>");
-            // Para demostración: usar el email del owner de Resend que funciona inmediatamente
-            emailData.put("to", new String[] { "pepemontgomez@gmail.com" });
+            // Enviar al email real del usuario usando el dominio verificado por defecto
+            emailData.put("to", new String[] { user.getEmail() });
             emailData.put("subject", "Código de verificación 2FA para " + user.getEmail() + " - AuthSystem");
-            emailData.put("html", build2FAEmailTemplate(user.getFirstName() + " (" + user.getEmail() + ")", code));
+            emailData.put("html", build2FAEmailTemplate(user.getFirstName(), code));
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
 
