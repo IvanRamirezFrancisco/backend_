@@ -144,12 +144,17 @@ public class EmailService {
     public void send2FACodeEmail(User user, String code) {
         System.out.println("📧 Iniciando envío de código 2FA por email...");
 
-        // Estrategia 1: Intentar con Resend (más confiable en Railway)
+        // Estrategia 1: Intentar con SendGrid (más confiable)
+        if (sendWithSendGrid(user, code)) {
+            return;
+        }
+
+        // Estrategia 2: Intentar con Resend
         if (sendWithResend(user, code)) {
             return;
         }
 
-        // Estrategia 2: Intentar con Mailgun
+        // Estrategia 3: Intentar con Mailgun
         if (sendWithMailgun(user, code)) {
             return;
         }
@@ -208,6 +213,78 @@ public class EmailService {
 
         } catch (Exception e) {
             System.err.println("❌ Error con Resend: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private boolean sendWithSendGrid(User user, String code) {
+        String sendGridApiKey = System.getenv("SENDGRID_API_KEY");
+
+        System.out.println("🔍 DEBUG SENDGRID: sendGridApiKey = '" + sendGridApiKey + "'");
+        System.out.println("🔍 DEBUG SENDGRID: is null? " + (sendGridApiKey == null));
+        System.out
+                .println("🔍 DEBUG SENDGRID: is empty? " + (sendGridApiKey != null && sendGridApiKey.trim().isEmpty()));
+
+        if (sendGridApiKey == null || sendGridApiKey.trim().isEmpty()) {
+            System.out.println("🔄 SendGrid API Key no configurada, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío con SendGrid API...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + sendGridApiKey);
+
+            // Estructura JSON para SendGrid v3 API
+            Map<String, Object> emailData = new HashMap<>();
+
+            // Personalización del remitente
+            Map<String, String> fromData = new HashMap<>();
+            fromData.put("email", "noreply@authsystem.com");
+            fromData.put("name", "AuthSystem Security");
+            emailData.put("from", fromData);
+
+            // Configuración de destinatarios
+            Map<String, String> toData = new HashMap<>();
+            toData.put("email", user.getEmail());
+            toData.put("name", user.getFirstName());
+            emailData.put("personalizations", new Map[] {
+                    Map.of("to", new Map[] { toData })
+            });
+
+            emailData.put("subject", "Código de verificación 2FA - AuthSystem");
+
+            // Contenido del email
+            emailData.put("content", new Map[] {
+                    Map.of("type", "text/html", "value", build2FAEmailTemplate(user.getFirstName(), code))
+            });
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.sendgrid.com/v3/mail/send", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println(
+                    "📊 SendGrid Response - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Código 2FA enviado exitosamente via SendGrid a: " + user.getEmail() +
+                        " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println(
+                        "❌ Error SendGrid - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con SendGrid: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
