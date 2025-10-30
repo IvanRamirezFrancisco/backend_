@@ -60,6 +60,14 @@ app:
       lockout-duration: 900000
 
   base-url: ${FRONTEND_URL:http://localhost:4200}
+  
+  # Configuraciones de proveedores de email alternativos
+  email:
+    resend:
+      api-key: ${RESEND_API_KEY:#{null}}
+    mailgun:
+      api-key: ${MAILGUN_API_KEY:#{null}}
+      domain: ${MAILGUN_DOMAIN:#{null}}
 
   notification:
     sms:

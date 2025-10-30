@@ -6,9 +6,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.*;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class EmailService {
@@ -21,6 +25,16 @@ public class EmailService {
 
     @Value("${spring.mail.username}")
     private String fromEmail;
+
+    // Configuraciones para servicios alternativos
+    @Value("${app.email.resend.api-key:#{null}}")
+    private String resendApiKey;
+
+    @Value("${app.email.mailgun.api-key:#{null}}")
+    private String mailgunApiKey;
+
+    @Value("${app.email.mailgun.domain:#{null}}")
+    private String mailgunDomain;
 
     public void sendVerificationEmail(User user, String verificationToken) {
         try {
@@ -128,7 +142,110 @@ public class EmailService {
     }
 
     public void send2FACodeEmail(User user, String code) {
+        System.out.println("📧 Iniciando envío de código 2FA por email...");
+
+        // Estrategia 1: Intentar con Resend (más confiable en Railway)
+        if (sendWithResend(user, code)) {
+            return;
+        }
+
+        // Estrategia 2: Intentar con Mailgun
+        if (sendWithMailgun(user, code)) {
+            return;
+        }
+
+        // Estrategia 3: Fallback a JavaMail (probablemente fallará en Railway)
+        sendWithJavaMail(user, code);
+    }
+
+    private boolean sendWithResend(User user, String code) {
+        if (resendApiKey == null || resendApiKey.trim().isEmpty()) {
+            System.out.println("🔄 Resend API Key no configurada, saltando...");
+            return false;
+        }
+
         try {
+            System.out.println("📨 Intentando envío con Resend...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(resendApiKey);
+
+            Map<String, Object> emailData = new HashMap<>();
+            emailData.put("from", "AuthSystem <noreply@resend.dev>");
+            emailData.put("to", new String[] { user.getEmail() });
+            emailData.put("subject", "Código de verificación 2FA - AuthSystem");
+            emailData.put("html", build2FAEmailTemplate(user.getFirstName(), code));
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.resend.com/emails", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Código 2FA enviado exitosamente via Resend a: " + user.getEmail() +
+                        " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Resend - Status: " + response.getStatusCode());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Resend: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean sendWithMailgun(User user, String code) {
+        if (mailgunApiKey == null || mailgunApiKey.trim().isEmpty() ||
+                mailgunDomain == null || mailgunDomain.trim().isEmpty()) {
+            System.out.println("🔄 Mailgun no configurado, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío con Mailgun...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.setBasicAuth("api", mailgunApiKey);
+
+            String body = "from=AuthSystem <noreply@" + mailgunDomain + ">" +
+                    "&to=" + user.getEmail() +
+                    "&subject=Código de verificación 2FA - AuthSystem" +
+                    "&html=" + java.net.URLEncoder.encode(build2FAEmailTemplate(user.getFirstName(), code), "UTF-8");
+
+            HttpEntity<String> request = new HttpEntity<>(body, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.mailgun.net/v3/" + mailgunDomain + "/messages", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Código 2FA enviado exitosamente via Mailgun a: " + user.getEmail() +
+                        " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Mailgun - Status: " + response.getStatusCode());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Mailgun: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void sendWithJavaMail(User user, String code) {
+        try {
+            System.out.println("📨 Intentando envío con JavaMail (puede fallar en Railway)...");
+
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
@@ -139,26 +256,21 @@ public class EmailService {
             String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
             helper.setText(htmlContent, true);
 
-            System.out.println("📧 Enviando código 2FA por email...");
-
-            // Usar un timeout más corto para evitar bloqueos largos
             long startTime = System.currentTimeMillis();
             mailSender.send(message);
             long endTime = System.currentTimeMillis();
 
-            System.out.println("✅ Código 2FA enviado exitosamente a: " + user.getEmail() + " (tiempo: "
-                    + (endTime - startTime) + "ms)");
+            System.out.println("✅ Código 2FA enviado exitosamente via JavaMail a: " + user.getEmail() +
+                    " (tiempo: " + (endTime - startTime) + "ms)");
 
         } catch (Exception e) {
             System.err.println("❌ Error enviando código 2FA a " + user.getEmail() + ": " + e.getMessage());
-            System.err.println("⚠️  NOTA: Railway puede bloquear conexiones SMTP. Usa SMS como alternativa.");
+            System.err.println("⚠️  NOTA: Railway bloquea conexiones SMTP directas.");
+            System.err.println("💡 SOLUCIÓN: Configura Resend o Mailgun API Keys para envío de emails.");
 
-            // Log más específico del error
-            if (e.getMessage().contains("Connection timed out")) {
-                System.err.println("💡 SUGERENCIA: El servidor está bloqueando conexiones SMTP. Usa SMS en su lugar.");
-            }
-
-            throw new RuntimeException("Error al enviar código 2FA por email: " + e.getMessage(), e);
+            throw new RuntimeException(
+                    "Error al enviar código 2FA por email. Configura un proveedor de email alternativo (Resend/Mailgun) o usa SMS.",
+                    e);
         }
     }
 
