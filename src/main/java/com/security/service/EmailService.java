@@ -159,21 +159,21 @@ public class EmailService {
     }
 
     private boolean sendWithResend(User user, String code) {
-        if (resendApiKey == null || resendApiKey.trim().isEmpty()) {
-            System.out.println("🔄 Resend API Key no configurada, saltando...");
+        if (resendApiKey == null || resendApiKey.trim().isEmpty() || resendApiKey.equals("re_demo_key_placeholder")) {
+            System.out.println("🔄 Resend API Key no configurada o es placeholder, saltando...");
             return false;
         }
 
         try {
-            System.out.println("📨 Intentando envío con Resend...");
+            System.out.println("📨 Intentando envío con Resend API...");
 
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(resendApiKey);
+            headers.set("Authorization", "Bearer " + resendApiKey);
 
             Map<String, Object> emailData = new HashMap<>();
-            emailData.put("from", "AuthSystem <noreply@resend.dev>");
+            emailData.put("from", "AuthSystem <onboarding@resend.dev>");
             emailData.put("to", new String[] { user.getEmail() });
             emailData.put("subject", "Código de verificación 2FA - AuthSystem");
             emailData.put("html", build2FAEmailTemplate(user.getFirstName(), code));
@@ -185,17 +185,20 @@ public class EmailService {
                     "https://api.resend.com/emails", request, String.class);
             long endTime = System.currentTimeMillis();
 
+            System.out.println("📊 Resend Response - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
+
             if (response.getStatusCode().is2xxSuccessful()) {
                 System.out.println("✅ Código 2FA enviado exitosamente via Resend a: " + user.getEmail() +
                         " (tiempo: " + (endTime - startTime) + "ms)");
                 return true;
             } else {
-                System.err.println("❌ Error Resend - Status: " + response.getStatusCode());
+                System.err.println("❌ Error Resend - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
                 return false;
             }
 
         } catch (Exception e) {
             System.err.println("❌ Error con Resend: " + e.getMessage());
+            e.printStackTrace();
             return false;
         }
     }

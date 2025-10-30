@@ -81,13 +81,6 @@
             <scope>runtime</scope>
         </dependency>
         
-        <!-- SendGrid for Email -->
-        <dependency>
-            <groupId>com.sendgrid</groupId>
-            <artifactId>sendgrid-java</artifactId>
-            <version>4.9.3</version>
-        </dependency>
-        
         <!-- Google Authenticator & QR Code -->
         <dependency>
             <groupId>com.warrenstrange</groupId>
