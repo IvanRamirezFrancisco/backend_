@@ -140,13 +140,25 @@ public class EmailService {
             helper.setText(htmlContent, true);
 
             System.out.println("📧 Enviando código 2FA por email...");
+
+            // Usar un timeout más corto para evitar bloqueos largos
+            long startTime = System.currentTimeMillis();
             mailSender.send(message);
-            System.out.println("✅ Código 2FA enviado exitosamente a: " + user.getEmail());
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("✅ Código 2FA enviado exitosamente a: " + user.getEmail() + " (tiempo: "
+                    + (endTime - startTime) + "ms)");
 
         } catch (Exception e) {
             System.err.println("❌ Error enviando código 2FA a " + user.getEmail() + ": " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar código 2FA por email", e);
+            System.err.println("⚠️  NOTA: Railway puede bloquear conexiones SMTP. Usa SMS como alternativa.");
+
+            // Log más específico del error
+            if (e.getMessage().contains("Connection timed out")) {
+                System.err.println("💡 SUGERENCIA: El servidor está bloqueando conexiones SMTP. Usa SMS en su lugar.");
+            }
+
+            throw new RuntimeException("Error al enviar código 2FA por email: " + e.getMessage(), e);
         }
     }
 

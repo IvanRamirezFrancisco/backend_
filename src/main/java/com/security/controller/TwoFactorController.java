@@ -107,8 +107,15 @@ public class TwoFactorController {
             }
 
         } catch (Exception e) {
+            // Manejo específico para errores de email
+            if (e.getMessage().contains("Connection timed out") ||
+                    e.getMessage().contains("Mail server connection failed")) {
+                return ResponseEntity.status(503)
+                        .body(new ApiResponse(false,
+                                "Error al enviar código 2FA por email. El servidor de correo no está disponible. Por favor, usa SMS como alternativa."));
+            }
             return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
+                    .body(new ApiResponse(false, "Error al enviar código 2FA: " + e.getMessage()));
         }
     }
 
