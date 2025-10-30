@@ -36,6 +36,9 @@ public class EmailService {
     @Value("${app.email.mailgun.domain:#{null}}")
     private String mailgunDomain;
 
+    @Value("${app.email.brevo.api-key:#{null}}")
+    private String brevoApiKey;
+
     public void sendVerificationEmail(User user, String verificationToken) {
         try {
 
@@ -144,31 +147,35 @@ public class EmailService {
     public void send2FACodeEmail(User user, String code) {
         System.out.println("📧 Iniciando envío de código 2FA por email...");
 
+        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)  
         String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
         String subject = "Código de verificación 2FA - AuthSystem";
-
-        // NUEVO: Usar JavaMail con Brevo SMTP configurado (más directo y confiable)
-        if (sendWith2FAWithJavaMail(user, subject, htmlContent)) {
+        if (sendWith2FAWithBrevoAPI(user, subject, htmlContent)) {
             return;
         }
 
-        // Estrategia 2: Intentar con SendGrid
-        if (sendWithSendGrid(user, code)) {
-            return;
-        }
-
-        // Estrategia 3: Intentar con Resend
+        // PRIORIDAD 2: Usar Resend API (backup)
         if (sendWithResend(user, code)) {
             return;
         }
 
-        // Estrategia 4: Intentar con Mailgun
+        // PRIORIDAD 2: Intentar con SendGrid
+        if (sendWithSendGrid(user, code)) {
+            return;
+        }
+
+        // PRIORIDAD 3: Intentar JavaMail con Brevo SMTP
+        if (sendWith2FAWithJavaMail(user, subject, htmlContent)) {
+            return;
+        }
+
+        // PRIORIDAD 4: Intentar con Mailgun
         if (sendWithMailgun(user, code)) {
             return;
         }
 
         // Si todo falla, lanzar excepción
-        throw new RuntimeException("Error: No se pudo enviar el email 2FA. Verifique la configuración de email.");
+        throw new RuntimeException("❌ Error: No se pudo enviar el email 2FA. Todos los proveedores fallaron.");
     }
 
     private boolean sendWith2FAWithJavaMail(User user, String subject, String htmlContent) {
@@ -198,6 +205,65 @@ public class EmailService {
         } catch (Exception e) {
             System.err.println("❌ Error con JavaMail/Brevo SMTP: " + e.getMessage());
             System.err.println("⚠️  Intentando con proveedores alternativos...");
+            return false;
+        }
+    }
+
+    private boolean sendWith2FAWithBrevoAPI(User user, String subject, String htmlContent) {
+        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
+            System.out.println("🔄 Brevo API Key no configurada, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío 2FA con Brevo API...");
+            System.out.println("🔑 DEBUG: Brevo API Key presente = " + (brevoApiKey != null && !brevoApiKey.trim().isEmpty()));
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            Map<String, Object> emailData = new HashMap<>();
+
+            // Remitente
+            Map<String, String> sender = new HashMap<>();
+            sender.put("name", "AuthSystem Security");
+            sender.put("email", "noreply@authsystem.com");
+            emailData.put("sender", sender);
+
+            // Destinatarios
+            Map<String, String> recipient = new HashMap<>();
+            recipient.put("email", user.getEmail());
+            recipient.put("name", user.getFirstName());
+            emailData.put("to", new Map[] { recipient });
+
+            emailData.put("subject", subject);
+            emailData.put("htmlContent", htmlContent);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.brevo.com/v3/smtp/email", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("📊 Brevo API Response - Status: " + response.getStatusCode() + 
+                              ", Body: " + response.getBody());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Código 2FA enviado exitosamente via Brevo API a: " + user.getEmail() +
+                        " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Brevo API - Status: " + response.getStatusCode() + 
+                                  ", Body: " + response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Brevo API: " + e.getMessage());
+            e.printStackTrace();
             return false;
         }
     }
