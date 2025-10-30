@@ -63,8 +63,12 @@ app:
   
   # Configuraciones de proveedores de email alternativos
   email:
+    brevo:
+      api-key: ${BREVO_API_KEY:#{null}}
     resend:
       api-key: ${RESEND_API_KEY:#{null}}
+    sendgrid:
+      api-key: ${SENDGRID_API_KEY:#{null}}
     mailgun:
       api-key: ${MAILGUN_API_KEY:#{null}}
       domain: ${MAILGUN_DOMAIN:#{null}}
