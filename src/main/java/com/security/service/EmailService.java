@@ -144,23 +144,58 @@ public class EmailService {
     public void send2FACodeEmail(User user, String code) {
         System.out.println("📧 Iniciando envío de código 2FA por email...");
 
-        // Estrategia 1: Intentar con SendGrid (más confiable)
+        String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
+        String subject = "Código de verificación 2FA - AuthSystem";
+
+        // NUEVO: Usar JavaMail con Brevo SMTP configurado (más directo y confiable)
+        if (sendWith2FAWithJavaMail(user, subject, htmlContent)) {
+            return;
+        }
+
+        // Estrategia 2: Intentar con SendGrid
         if (sendWithSendGrid(user, code)) {
             return;
         }
 
-        // Estrategia 2: Intentar con Resend
+        // Estrategia 3: Intentar con Resend
         if (sendWithResend(user, code)) {
             return;
         }
 
-        // Estrategia 3: Intentar con Mailgun
+        // Estrategia 4: Intentar con Mailgun
         if (sendWithMailgun(user, code)) {
             return;
         }
 
-        // Estrategia 3: Fallback a JavaMail (probablemente fallará en Railway)
-        sendWithJavaMail(user, code);
+        // Si todo falla, lanzar excepción
+        throw new RuntimeException("Error: No se pudo enviar el email 2FA. Verifique la configuración de email.");
+    }
+
+    private boolean sendWith2FAWithJavaMail(User user, String subject, String htmlContent) {
+        try {
+            System.out.println("📨 Intentando envío 2FA con JavaMail (Brevo SMTP)...");
+
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail); // Usará la configuración de Brevo
+            helper.setTo(user.getEmail());
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
+
+            long startTime = System.currentTimeMillis();
+            mailSender.send(message);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("✅ Código 2FA enviado exitosamente via Brevo SMTP a: " + user.getEmail() +
+                    " (tiempo: " + (endTime - startTime) + "ms)");
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con JavaMail/Brevo SMTP: " + e.getMessage());
+            System.err.println("⚠️  Intentando con proveedores alternativos...");
+            return false;
+        }
     }
 
     private boolean sendWithResend(User user, String code) {

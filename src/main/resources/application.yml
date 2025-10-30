@@ -23,8 +23,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp-relay.brevo.com}
     port: ${MAIL_PORT:587}
-    username: ${BREVO_USER:test@example.com}
-    password: ${BREVO_PASSWORD:placeholder}
+    username: ${MAIL_USERNAME:9a5a33001@smtp-brevo.com}
+    password: ${MAIL_PASSWORD:placeholder}
     properties:
       mail:
         smtp:
