@@ -147,7 +147,7 @@ public class EmailService {
     public void send2FACodeEmail(User user, String code) {
         System.out.println("📧 Iniciando envío de código 2FA por email...");
 
-        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)  
+        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
         String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
         String subject = "Código de verificación 2FA - AuthSystem";
         if (sendWith2FAWithBrevoAPI(user, subject, htmlContent)) {
@@ -217,7 +217,8 @@ public class EmailService {
 
         try {
             System.out.println("📨 Intentando envío 2FA con Brevo API...");
-            System.out.println("🔑 DEBUG: Brevo API Key presente = " + (brevoApiKey != null && !brevoApiKey.trim().isEmpty()));
+            System.out.println(
+                    "🔑 DEBUG: Brevo API Key presente = " + (brevoApiKey != null && !brevoApiKey.trim().isEmpty()));
 
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
@@ -248,16 +249,16 @@ public class EmailService {
                     "https://api.brevo.com/v3/smtp/email", request, String.class);
             long endTime = System.currentTimeMillis();
 
-            System.out.println("📊 Brevo API Response - Status: " + response.getStatusCode() + 
-                              ", Body: " + response.getBody());
+            System.out.println("📊 Brevo API Response - Status: " + response.getStatusCode() +
+                    ", Body: " + response.getBody());
 
             if (response.getStatusCode().is2xxSuccessful()) {
                 System.out.println("✅ Código 2FA enviado exitosamente via Brevo API a: " + user.getEmail() +
                         " (tiempo: " + (endTime - startTime) + "ms)");
                 return true;
             } else {
-                System.err.println("❌ Error Brevo API - Status: " + response.getStatusCode() + 
-                                  ", Body: " + response.getBody());
+                System.err.println("❌ Error Brevo API - Status: " + response.getStatusCode() +
+                        ", Body: " + response.getBody());
                 return false;
             }
 
