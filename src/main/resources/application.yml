@@ -6,9 +6,9 @@ spring:
     name: auth-system
 
   datasource:
-    url: jdbc:mysql://shuttle.proxy.rlwy.net:12180/railway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
-    password: yTDceDibDvffRTXVLvFFDALGrDvGzGly
+    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQLUSER}
+    password: ${MYSQLPASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -24,7 +24,7 @@ spring:
     host: ${MAIL_HOST:smtp-relay.brevo.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:9a5a33001@smtp-brevo.com}
-    password: ${MAIL_PASSWORD:placeholder}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
