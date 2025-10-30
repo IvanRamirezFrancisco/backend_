@@ -147,6 +147,13 @@ public class EmailService {
     public void send2FACodeEmail(User user, String code) {
         System.out.println("📧 Iniciando envío de código 2FA por email...");
 
+        // 🔍 DEBUG: Verificar configuraciones
+        System.out.println("🔧 DEBUG CONFIGURACIONES:");
+        System.out.println("🔑 Brevo API Key: '" + brevoApiKey + "'");
+        System.out.println("🔑 Brevo API Key null? " + (brevoApiKey == null));
+        System.out.println("🔑 Brevo API Key empty? " + (brevoApiKey != null && brevoApiKey.trim().isEmpty()));
+        System.out.println("🔑 Resend API Key: '" + resendApiKey + "'");
+
         // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
         String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
         String subject = "Código de verificación 2FA - AuthSystem";
