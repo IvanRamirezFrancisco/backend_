@@ -180,7 +180,7 @@ public class EmailService {
             headers.set("Authorization", "Bearer " + resendApiKey);
 
             Map<String, Object> emailData = new HashMap<>();
-            emailData.put("from", "AuthSystem <onboarding@resend.dev>");
+            emailData.put("from", "AuthSystem <noreply@news.example.com>");
             emailData.put("to", new String[] { user.getEmail() });
             emailData.put("subject", "Código de verificación 2FA para " + user.getEmail() + " - AuthSystem");
             emailData.put("html", build2FAEmailTemplate(user.getFirstName() + " (" + user.getEmail() + ")", code));
