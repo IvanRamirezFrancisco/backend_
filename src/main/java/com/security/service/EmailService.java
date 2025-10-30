@@ -174,6 +174,10 @@ public class EmailService {
     private boolean sendWith2FAWithJavaMail(User user, String subject, String htmlContent) {
         try {
             System.out.println("📨 Intentando envío 2FA con JavaMail (Brevo SMTP)...");
+            System.out.println("🔧 DEBUG MAIL CONFIG:");
+            System.out.println("📧 From Email: " + fromEmail);
+            System.out.println("📤 To Email: " + user.getEmail());
+            System.out.println("📝 Subject: " + subject);
 
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");

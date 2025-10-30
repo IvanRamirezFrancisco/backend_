@@ -85,3 +85,5 @@ logging:
     org.hibernate.SQL: DEBUG
     org.springframework.web: DEBUG
     org.springframework.boot.web.servlet: DEBUG
+    org.springframework.mail: DEBUG
+    org.springframework.boot.autoconfigure.mail: DEBUG

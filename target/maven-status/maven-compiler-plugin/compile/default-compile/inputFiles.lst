@@ -45,6 +45,7 @@ C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\s
 C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\security\CurrentUser.java
 C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\entity\ActiveSession.java
 C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\entity\LoginAttempt.java
+C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\config\MailConfigDebug.java
 C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\dto\request\RegisterRequest.java
 C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\repository\RoleRepository.java
 C:\Users\ivanf\Documents\7mo\Proyecto_Login\segundo proyecto\src\main\java\com\security\repository\VerificationTokenRepository.java
