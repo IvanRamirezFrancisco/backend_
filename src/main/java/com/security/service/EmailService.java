@@ -40,46 +40,46 @@ public class EmailService {
     private String brevoApiKey;
 
     public void sendVerificationEmail(User user, String verificationToken) {
-        try {
+        System.out.println("📧 Iniciando envío de email de verificación...");
+        System.out.println("🔧 DEBUG EMAIL CONFIG:");
+        System.out.println("📧 Username: " + fromEmail);
+        System.out.println("🌐 Base URL: " + baseUrl);
+        System.out.println("📤 Para: " + user.getEmail());
+        System.out.println("🔑 Token: " + verificationToken);
 
-            // 🔴 AGREGAR ESTE DEBUG TEMPORAL
-            System.out.println("🔧 DEBUG EMAIL CONFIG:");
-            System.out.println("📧 Username: " + fromEmail);
-            System.out.println("🌐 Base URL: " + baseUrl);
-            System.out.println("📤 Para: " + user.getEmail());
-            System.out.println("🔑 Token: " + verificationToken);
+        // Crear URL de verificación usando baseUrl (FRONTEND_URL)
+        String verificationUrl = baseUrl + "/verify-account?token=" + verificationToken;
+        String htmlContent = buildEmailTemplate(user.getFirstName(), verificationUrl, verificationToken);
+        String subject = "Verificación de cuenta - AuthSystem";
+
+        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
+        if (sendVerificationWithBrevoAPI(user, subject, htmlContent)) {
+            return;
+        }
+
+        // PRIORIDAD 2: Usar Resend API (backup)
+        if (sendVerificationWithResend(user, subject, htmlContent)) {
+            return;
+        }
+
+        // PRIORIDAD 3: Intentar JavaMail/SMTP (puede fallar en Railway)
+        try {
+            System.out.println("📨 Intentando envío con JavaMail/SMTP (puede fallar en Railway)...");
+
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
             helper.setFrom(fromEmail);
             helper.setTo(user.getEmail());
-            helper.setSubject("Verificación de cuenta - AuthSystem");
-
-            // 🔴 CAMBIAR ESTA LÍNEA - USAR ENDPOINT DEL BACKEND
-            String verificationUrl = "http://localhost:8080/api/auth/verify?token=" + verificationToken;
-
-            String htmlContent = buildEmailTemplate(user.getFirstName(), verificationUrl, verificationToken);
+            helper.setSubject(subject);
             helper.setText(htmlContent, true);
 
-            System.out.println("📨 Enviando email...");
-            // ENVÍO REAL (descomenta cuando tengas las variables configuradas)
             mailSender.send(message);
-            System.out.println("✅ Email enviado exitosamente a: " + user.getEmail());
-            System.out.println("✅ Email enviado exitosamente a: " + user.getEmail());
+            System.out.println("✅ Email de verificación enviado exitosamente via SMTP a: " + user.getEmail());
 
-            // SIMULACIÓN (comenta cuando quieras envío real)
-            /*
-             * System.out.println("📧 ========== EMAIL SIMULADO ==========");
-             * System.out.println("📤 Para: " + user.getEmail());
-             * System.out.println("🔗 URL: " + verificationUrl);
-             * System.out.println("🔑 Token: " + verificationToken);
-             * System.out.println("📧 =======================================");
-             */
-
-        } catch (MessagingException e) {
-            System.err.println("❌ Error enviando email a " + user.getEmail() + ": " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar email de verificación", e);
+        } catch (Exception e) {
+            System.err.println("❌ Error enviando email de verificación a " + user.getEmail() + ": " + e.getMessage());
+            throw new RuntimeException("Error al enviar email de verificación. Todos los proveedores fallaron.", e);
         }
     }
 
@@ -474,6 +474,113 @@ public class EmailService {
             throw new RuntimeException(
                     "Error al enviar código 2FA por email. Configura un proveedor de email alternativo (Resend/Mailgun) o usa SMS.",
                     e);
+        }
+    }
+
+    // Método para enviar email de verificación usando Brevo API
+    private boolean sendVerificationWithBrevoAPI(User user, String subject, String htmlContent) {
+        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
+            System.out.println("🔄 Brevo API Key no configurada para verificación, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío de verificación con Brevo API...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            Map<String, Object> emailData = new HashMap<>();
+
+            // Remitente - usando email verificado en Brevo
+            Map<String, String> sender = new HashMap<>();
+            sender.put("name", "AuthSystem");
+            sender.put("email", "pepemontgomez@gmail.com"); // Email verificado en Brevo
+            emailData.put("sender", sender);
+
+            // Destinatarios
+            Map<String, String> recipient = new HashMap<>();
+            recipient.put("email", user.getEmail());
+            recipient.put("name", user.getFirstName());
+            emailData.put("to", new Map[] { recipient });
+
+            emailData.put("subject", subject);
+            emailData.put("htmlContent", htmlContent);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.brevo.com/v3/smtp/email", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("📊 Brevo API Response (Verificación) - Status: " + response.getStatusCode() +
+                    ", Body: " + response.getBody());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Email de verificación enviado exitosamente via Brevo API a: " + user.getEmail() +
+                        " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Brevo API (Verificación) - Status: " + response.getStatusCode() +
+                        ", Body: " + response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Brevo API (Verificación): " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Método para enviar email de verificación usando Resend API
+    private boolean sendVerificationWithResend(User user, String subject, String htmlContent) {
+        if (resendApiKey == null || resendApiKey.trim().isEmpty() || resendApiKey.equals("re_demo_key_placeholder")) {
+            System.out.println("🔄 Resend API Key no configurada para verificación, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío de verificación con Resend API...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + resendApiKey);
+
+            Map<String, Object> emailData = new HashMap<>();
+            emailData.put("from", "AuthSystem <onboarding@resend.dev>");
+            emailData.put("to", new String[] { user.getEmail() });
+            emailData.put("subject", subject);
+            emailData.put("html", htmlContent);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.resend.com/emails", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("📊 Resend Response (Verificación) - Status: " + response.getStatusCode() +
+                    ", Body: " + response.getBody());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Email de verificación enviado exitosamente via Resend a: " + user.getEmail() +
+                        " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Resend (Verificación) - Status: " + response.getStatusCode() +
+                        ", Body: " + response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Resend (Verificación): " + e.getMessage());
+            e.printStackTrace();
+            return false;
         }
     }
 
