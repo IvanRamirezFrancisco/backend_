@@ -236,8 +236,8 @@ public class EmailService {
 
             // Remitente - usando tu email personal verificado
             Map<String, String> sender = new HashMap<>();
-            sender.put("name", "AuthSystem Security");
-            sender.put("email", "9a5a33001@smtp-brevo.com"); // Email verificado en Brevo
+            sender.put("name", "AuthSystem");
+            sender.put("email", "pepemontgomez@gmail.com"); // Email verificado en Brevo
             emailData.put("sender", sender);
 
             // Destinatarios
