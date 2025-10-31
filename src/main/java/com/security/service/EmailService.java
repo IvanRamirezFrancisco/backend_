@@ -151,7 +151,7 @@ public class EmailService {
         String htmlContent = buildPasswordResetEmailTemplate(user.getFirstName(), resetUrl, token);
         String subject = "Recuperación de contraseña - AuthSystem";
 
-        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
+        // PRIORIDAD 1: Usar Brevo API
         if (sendPasswordResetWithBrevoAPI(user, subject, htmlContent)) {
             return;
         }
