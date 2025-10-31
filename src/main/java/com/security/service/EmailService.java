@@ -140,8 +140,48 @@ public class EmailService {
     }
 
     public void sendPasswordResetEmail(User user, String token) {
-        System.out.println("📧 PASSWORD RESET EMAIL para: " + user.getEmail());
+        System.out.println("📧 Iniciando envío de email de reseteo de contraseña...");
+        System.out.println("🔧 DEBUG RESET PASSWORD CONFIG:");
+        System.out.println("📤 Para: " + user.getEmail());
         System.out.println("🔑 Token: " + token);
+        System.out.println("🌐 Base URL: " + baseUrl);
+
+        // Crear URL de reseteo de contraseña usando baseUrl (FRONTEND_URL)
+        String resetUrl = baseUrl + "/reset-password?token=" + token;
+        String htmlContent = buildPasswordResetEmailTemplate(user.getFirstName(), resetUrl, token);
+        String subject = "Recuperación de contraseña - AuthSystem";
+
+        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
+        if (sendPasswordResetWithBrevoAPI(user, subject, htmlContent)) {
+            return;
+        }
+
+        // PRIORIDAD 2: Usar Resend API (backup)
+        if (sendPasswordResetWithResend(user, subject, htmlContent)) {
+            return;
+        }
+
+        // PRIORIDAD 3: Intentar JavaMail/SMTP (puede fallar en Railway)
+        try {
+            System.out.println("📨 Intentando envío de reseteo con JavaMail/SMTP (puede fallar en Railway)...");
+
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(user.getEmail());
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
+
+            mailSender.send(message);
+            System.out.println("✅ Email de reseteo de contraseña enviado exitosamente via SMTP a: " + user.getEmail());
+
+        } catch (Exception e) {
+            System.err.println(
+                    "❌ Error enviando email de reseteo de contraseña a " + user.getEmail() + ": " + e.getMessage());
+            throw new RuntimeException(
+                    "Error al enviar email de reseteo de contraseña. Todos los proveedores fallaron.", e);
+        }
     }
 
     public void send2FACodeEmail(User user, String code) {
@@ -582,6 +622,201 @@ public class EmailService {
             e.printStackTrace();
             return false;
         }
+    }
+
+    // Método para enviar email de reseteo de contraseña usando Brevo API
+    private boolean sendPasswordResetWithBrevoAPI(User user, String subject, String htmlContent) {
+        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
+            System.out.println("🔄 Brevo API Key no configurada para reseteo de contraseña, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío de reseteo de contraseña con Brevo API...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            Map<String, Object> emailData = new HashMap<>();
+
+            // Remitente - usando email verificado en Brevo
+            Map<String, String> sender = new HashMap<>();
+            sender.put("name", "AuthSystem Security");
+            sender.put("email", "pepemontgomez@gmail.com"); // Email verificado en Brevo
+            emailData.put("sender", sender);
+
+            // Destinatarios
+            Map<String, String> recipient = new HashMap<>();
+            recipient.put("email", user.getEmail());
+            recipient.put("name", user.getFirstName());
+            emailData.put("to", new Map[] { recipient });
+
+            emailData.put("subject", subject);
+            emailData.put("htmlContent", htmlContent);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.brevo.com/v3/smtp/email", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("📊 Brevo API Response (Reset Password) - Status: " + response.getStatusCode() +
+                    ", Body: " + response.getBody());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println(
+                        "✅ Email de reseteo de contraseña enviado exitosamente via Brevo API a: " + user.getEmail() +
+                                " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Brevo API (Reset Password) - Status: " + response.getStatusCode() +
+                        ", Body: " + response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Brevo API (Reset Password): " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Método para enviar email de reseteo de contraseña usando Resend API
+    private boolean sendPasswordResetWithResend(User user, String subject, String htmlContent) {
+        if (resendApiKey == null || resendApiKey.trim().isEmpty() || resendApiKey.equals("re_demo_key_placeholder")) {
+            System.out.println("🔄 Resend API Key no configurada para reseteo de contraseña, saltando...");
+            return false;
+        }
+
+        try {
+            System.out.println("📨 Intentando envío de reseteo de contraseña con Resend API...");
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + resendApiKey);
+
+            Map<String, Object> emailData = new HashMap<>();
+            emailData.put("from", "AuthSystem Security <onboarding@resend.dev>");
+            emailData.put("to", new String[] { user.getEmail() });
+            emailData.put("subject", subject);
+            emailData.put("html", htmlContent);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api.resend.com/emails", request, String.class);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("📊 Resend Response (Reset Password) - Status: " + response.getStatusCode() +
+                    ", Body: " + response.getBody());
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println(
+                        "✅ Email de reseteo de contraseña enviado exitosamente via Resend a: " + user.getEmail() +
+                                " (tiempo: " + (endTime - startTime) + "ms)");
+                return true;
+            } else {
+                System.err.println("❌ Error Resend (Reset Password) - Status: " + response.getStatusCode() +
+                        ", Body: " + response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Error con Resend (Reset Password): " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Template para email de reseteo de contraseña
+    private String buildPasswordResetEmailTemplate(String userName, String resetUrl, String token) {
+        return """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
+                        .header { background-color: #e74c3c; color: white; padding: 20px; text-align: center; }
+                        .content { padding: 20px; text-align: center; }
+                        .button {
+                            background-color: #e74c3c;
+                            color: white;
+                            padding: 15px 30px;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            display: inline-block;
+                            margin: 20px 0;
+                            font-weight: bold;
+                        }
+                        .token {
+                            background-color: #f1f1f1;
+                            padding: 15px;
+                            font-family: monospace;
+                            font-size: 18px;
+                            text-align: center;
+                            margin: 20px 0;
+                            border-radius: 5px;
+                            border: 2px solid #e74c3c;
+                            color: #333;
+                            word-break: break-all;
+                        }
+                        .warning {
+                            color: #e74c3c;
+                            font-size: 14px;
+                            margin-top: 20px;
+                            background-color: #ffe6e6;
+                            padding: 15px;
+                            border-radius: 5px;
+                            border-left: 4px solid #e74c3c;
+                        }
+                        .footer {
+                            margin-top: 30px;
+                            padding-top: 20px;
+                            border-top: 1px solid #eee;
+                            color: #666;
+                            font-size: 12px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h1>🔒 Recuperación de Contraseña</h1>
+                        </div>
+                        <div class="content">
+                            <h2>Hola %s</h2>
+                            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en AuthSystem.</p>
+
+                            <h3>Opción 1: Click en el enlace</h3>
+                            <a href="%s" class="button">Restablecer Contraseña</a>
+
+                            <h3>Opción 2: Usa este token</h3>
+                            <div class="token">%s</div>
+                            <p>Copia y pega este token en la aplicación para restablecer tu contraseña.</p>
+
+                            <p><strong>Este enlace y token expiran en 1 hora.</strong></p>
+
+                            <div class="warning">
+                                <strong>⚠️ Importante:</strong><br>
+                                • Si no solicitaste este restablecimiento, ignora este email.<br>
+                                • Tu contraseña actual sigue siendo válida hasta que la cambies.<br>
+                                • Nunca compartas este token con nadie.<br>
+                                • Si tienes dudas, contacta a nuestro soporte.
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <p>Este email fue enviado automáticamente por AuthSystem.</p>
+                            <p>© 2025 AuthSystem. Todos los derechos reservados.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """.formatted(userName, resetUrl, token);
     }
 
     private String build2FAEmailTemplate(String userName, String code) {
