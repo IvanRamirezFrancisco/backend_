@@ -88,7 +88,7 @@ public class VerificationService {
         User user = userService.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (user.isEnabled()) {
+        if (user.getEnabled()) {
             throw new RuntimeException("User is already verified");
         }
 

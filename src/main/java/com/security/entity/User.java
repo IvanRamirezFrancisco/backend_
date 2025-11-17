@@ -51,7 +51,7 @@ public class User {
     private String phone;
 
     @Column(nullable = false)
-    private boolean enabled = false;
+    private Boolean enabled = false;
 
     @Column(name = "two_factor_enabled", nullable = false)
     private Boolean twoFactorEnabled = false;
@@ -278,16 +278,6 @@ public class User {
     public Boolean getEnabled() {
         return enabled;
     }
-
-    public boolean isEnabled() { // ← MÉTODO QUE FALTA
-        return enabled;
-    }
-
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    ///////////////////////////
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;

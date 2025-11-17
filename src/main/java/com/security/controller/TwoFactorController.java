@@ -46,7 +46,7 @@ public class TwoFactorController {
         try {
             // Setup completo en una sola llamada
             Map<String, Object> setupData = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
-            
+
             return ResponseEntity.ok(new ApiResponse(true,
                     "Google Authenticator configurado exitosamente. Escanea el QR con tu app y confirma con un código de 6 dígitos.",
                     setupData));
@@ -62,7 +62,7 @@ public class TwoFactorController {
         try {
             // Setup completo en una sola llamada
             Map<String, Object> setupData = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
-            
+
             return ResponseEntity.ok(new ApiResponse(true,
                     "Google Authenticator configurado exitosamente. Escanea el QR con tu app y confirma con un código de 6 dígitos.",
                     setupData));
