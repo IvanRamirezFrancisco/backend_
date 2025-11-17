@@ -45,48 +45,50 @@ public class TwoFactorService {
     // ===== GOOGLE AUTHENTICATOR (TOTP) =====
 
     /**
-     * MÉTODO ROBUSTO: Setup completo de Google Authenticator
+     * MÉTODO SIN TRANSACCIONES: Setup completo de Google Authenticator
      * RETORNA: Map con secret, QR y toda la información necesaria
+     * NOTA: Sin @Transactional para evitar conflictos JPA
      */
-    @Transactional
     public Map<String, Object> setupGoogleAuthenticatorComplete(Long userId) {
-        try {
-            // 1. Cargar usuario sin transacciones anidadas
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        System.out.println("🚀 === SETUP GOOGLE AUTHENTICATOR (SIN TRANSACCIONES) ===");
+        System.out.println("  - Usuario ID: " + userId);
 
-            System.out.println("🚀 === SETUP GOOGLE AUTHENTICATOR ===");
-            System.out.println("  - Usuario ID: " + userId);
-            System.out.println("  - Email: " + user.getEmail());
+        try {
+            // 1. Cargar usuario usando UserService (más robusto)
+            User user = userService.getUserById(userId);
+            System.out.println("  - Usuario encontrado: " + user.getEmail());
 
             // 2. Verificar si ya está configurado
             if (user.getGoogleAuthEnabled() != null && user.getGoogleAuthEnabled()) {
                 throw new RuntimeException("Google Authenticator ya está habilitado para este usuario");
             }
 
-            // 3. Generar secret
+            // 3. Generar secret ANTES de cualquier operación de BD
             String secret = totpService.generateSecretKey();
             System.out.println("  - Secret generado: " + secret.substring(0, 4) + "... (length: " + secret.length() + ")");
 
-            // 4. Actualizar SOLO los campos necesarios
-            user.setGoogleAuthSecret(secret);
-            user.setTwoFactorType(TwoFactorType.GOOGLE_AUTHENTICATOR);
-            user.setGoogleAuthEnabled(false); // Se activa después de confirmación
+            // 4. Generar QR ANTES de guardar en BD (para evitar rollback)
+            String qrCodeBase64 = totpService.generateQRCodeBase64(secret, user.getEmail());
+            System.out.println("  ✅ QR Code generado antes de guardar");
 
-            // 5. Guardar con manejo de errores específico
+            // 5. Guardar en BD usando operación atómica simple
             try {
-                userRepository.save(user);
-                System.out.println("  ✅ Secret guardado en BD");
+                // Usar una operación SQL directa más simple
+                user.setGoogleAuthSecret(secret);
+                user.setTwoFactorType(TwoFactorType.GOOGLE_AUTHENTICATOR);
+                user.setGoogleAuthEnabled(false); // Se activa después de confirmación
+                
+                // Usar userService.save que maneja transacciones internamente
+                userService.save(user);
+                System.out.println("  ✅ Secret guardado en BD exitosamente");
+                
             } catch (Exception saveException) {
                 System.err.println("❌ Error guardando en BD: " + saveException.getMessage());
+                saveException.printStackTrace();
                 throw new RuntimeException("Error guardando configuración: " + saveException.getMessage());
             }
 
-            // 6. Generar QR después de guardar exitosamente
-            String qrCodeBase64 = totpService.generateQRCodeBase64(secret, user.getEmail());
-            System.out.println("  ✅ QR Code generado");
-
-            // 7. Preparar respuesta completa
+            // 6. Preparar respuesta completa (todo generado exitosamente)
             Map<String, Object> result = new HashMap<>();
             result.put("secret", secret);
             result.put("manualEntryKey", secret);
@@ -94,9 +96,10 @@ public class TwoFactorService {
             result.put("issuer", "AuthSystem");
             result.put("accountName", user.getEmail());
             result.put("instructions", "1. Escanea el QR con Google Authenticator\n2. O ingresa la clave manual\n3. Confirma con un código de 6 dígitos");
-            result.put("nextStep", "Usa POST /api/2fa/google/confirm con el código generado");
+            result.put("nextStep", "Usa POST /api/two-factor/google/confirm con el código generado");
+            result.put("setupTime", System.currentTimeMillis());
 
-            System.out.println("  🎉 Setup completo exitoso");
+            System.out.println("  🎉 Setup completo exitoso - Sin errores JPA");
             return result;
 
         } catch (Exception e) {
@@ -104,32 +107,21 @@ public class TwoFactorService {
             e.printStackTrace();
             throw new RuntimeException("Error configurando Google Authenticator: " + e.getMessage());
         }
-    }    /**
-     * MÉTODO SIMPLIFICADO: Solo genera y guarda el secret
-     * Para uso con endpoints que llaman por separado al QR
+    }
+
+    /**
+     * MÉTODO MEJORADO: Llama al setup completo y devuelve solo el secret
+     * EVITA duplicación de lógica y transacciones conflictivas
      */
-    @Transactional
     public String enableGoogleAuthenticator(Long userId) {
         try {
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-
-            System.out.println("🔧 Habilitando Google Auth para user: " + user.getEmail());
-
-            // Verificar si ya está habilitado
-            if (user.getGoogleAuthEnabled() != null && user.getGoogleAuthEnabled()) {
-                throw new RuntimeException("Google Authenticator ya está habilitado");
-            }
-
-            // Generar y guardar secret
-            String secret = totpService.generateSecretKey();
-            user.setGoogleAuthSecret(secret);
-            user.setTwoFactorType(TwoFactorType.GOOGLE_AUTHENTICATOR);
-            user.setGoogleAuthEnabled(false); // Se activa con confirmación
-
-            userRepository.save(user);
-            System.out.println("✅ Secret guardado exitosamente");
-
+            System.out.println("🔧 Habilitando Google Auth (delegando a setupCompleto)");
+            
+            // Usar el método completo que ya funciona sin transacciones
+            Map<String, Object> setup = setupGoogleAuthenticatorComplete(userId);
+            String secret = (String) setup.get("secret");
+            
+            System.out.println("✅ Secret obtenido del setup completo: " + secret.substring(0, 4) + "...");
             return secret;
 
         } catch (Exception e) {
@@ -173,19 +165,18 @@ public class TwoFactorService {
     }
 
     /**
-     * CONFIRMACIÓN SIMPLIFICADA: Verifica código y activa Google Authenticator
+     * CONFIRMACIÓN SIN TRANSACCIONES: Verifica código y activa Google Authenticator
      */
-    @Transactional
     public boolean confirmGoogleAuthenticator(Long userId, String code) {
         try {
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+            // Usar UserService en lugar de Repository directo
+            User user = userService.getUserById(userId);
 
             if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
                 throw new RuntimeException("Google Authenticator no configurado. Ejecuta /setup primero.");
             }
 
-            System.out.println("🔐 === CONFIRMANDO GOOGLE AUTHENTICATOR ===");
+            System.out.println("🔐 === CONFIRMANDO GOOGLE AUTHENTICATOR (SIN TRANSACCIONES) ===");
             System.out.println("  - Usuario: " + user.getEmail());
             System.out.println("  - Código: " + code);
 
@@ -193,13 +184,18 @@ public class TwoFactorService {
             boolean isValid = totpService.verifyCode(user.getGoogleAuthSecret(), code);
 
             if (isValid) {
-                // Activar 2FA
-                user.setTwoFactorEnabled(true);
-                user.setGoogleAuthEnabled(true);
-                userRepository.save(user);
+                try {
+                    // Activar 2FA usando UserService (maneja transacciones internamente)
+                    user.setTwoFactorEnabled(true);
+                    user.setGoogleAuthEnabled(true);
+                    userService.save(user);
 
-                System.out.println("  ✅ Google Auth ACTIVADO");
-                return true;
+                    System.out.println("  ✅ Google Auth ACTIVADO exitosamente");
+                    return true;
+                } catch (Exception saveError) {
+                    System.err.println("❌ Error guardando activación: " + saveError.getMessage());
+                    throw new RuntimeException("Error activando Google Authenticator: " + saveError.getMessage());
+                }
             } else {
                 System.out.println("  ❌ Código inválido");
                 return false;
