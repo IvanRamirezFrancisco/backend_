@@ -31,9 +31,8 @@ public class User {
     @Column(name = "last_name", nullable = false)
     private String lastName;
 
-    @NotBlank
     @Size(min = 3, max = 30)
-    @Column(nullable = false, unique = true)
+    @Column(nullable = true, unique = true)
     private String username;
 
     @NotBlank
@@ -69,7 +68,7 @@ public class User {
     private Boolean credentialsNonExpired = true;
 
     // nueva
-    @Column(name = "google_auth_secret")
+    @Column(name = "google_auth_secret", length = 255)
     private String googleAuthSecret;
 
     @Column(name = "google_auth_enabled")
