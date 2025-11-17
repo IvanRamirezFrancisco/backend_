@@ -47,15 +47,16 @@ public class TwoFactorService {
     /**
      * MÉTODO SIN TRANSACCIONES: Setup completo de Google Authenticator
      * RETORNA: Map con secret, QR y toda la información necesaria
-     * NOTA: Sin @Transactional para evitar conflictos JPA
+     * NOTA: Usa repositorio directo para evitar conflictos JPA/transaccional
      */
     public Map<String, Object> setupGoogleAuthenticatorComplete(Long userId) {
-        System.out.println("🚀 === SETUP GOOGLE AUTHENTICATOR (SIN TRANSACCIONES) ===");
+        System.out.println("🚀 === SETUP GOOGLE AUTHENTICATOR (REPOSITORIO DIRECTO) ===");
         System.out.println("  - Usuario ID: " + userId);
 
         try {
-            // 1. Cargar usuario usando UserService (más robusto)
-            User user = userService.getUserById(userId);
+            // 1. Cargar usuario usando REPOSITORIO DIRECTO (sin transacciones)
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
             System.out.println("  - Usuario encontrado: " + user.getEmail());
 
             // 2. Verificar si ya está configurado
@@ -65,23 +66,24 @@ public class TwoFactorService {
 
             // 3. Generar secret ANTES de cualquier operación de BD
             String secret = totpService.generateSecretKey();
-            System.out.println("  - Secret generado: " + secret.substring(0, 4) + "... (length: " + secret.length() + ")");
+            System.out.println(
+                    "  - Secret generado: " + secret.substring(0, 4) + "... (length: " + secret.length() + ")");
 
             // 4. Generar QR ANTES de guardar en BD (para evitar rollback)
             String qrCodeBase64 = totpService.generateQRCodeBase64(secret, user.getEmail());
             System.out.println("  ✅ QR Code generado antes de guardar");
 
-            // 5. Guardar en BD usando operación atómica simple
+            // 5. Guardar usando REPOSITORIO DIRECTO (sin transacciones adicionales)
             try {
-                // Usar una operación SQL directa más simple
+                // Configurar usuario directamente
                 user.setGoogleAuthSecret(secret);
                 user.setTwoFactorType(TwoFactorType.GOOGLE_AUTHENTICATOR);
                 user.setGoogleAuthEnabled(false); // Se activa después de confirmación
-                
-                // Usar userService.save que maneja transacciones internamente
-                userService.save(user);
-                System.out.println("  ✅ Secret guardado en BD exitosamente");
-                
+
+                // CRÍTICO: Usar repositorio directo sin UserService
+                userRepository.save(user);
+                System.out.println("  ✅ Secret guardado en BD con repositorio directo");
+
             } catch (Exception saveException) {
                 System.err.println("❌ Error guardando en BD: " + saveException.getMessage());
                 saveException.printStackTrace();
@@ -95,7 +97,8 @@ public class TwoFactorService {
             result.put("qrCode", "data:image/png;base64," + qrCodeBase64);
             result.put("issuer", "AuthSystem");
             result.put("accountName", user.getEmail());
-            result.put("instructions", "1. Escanea el QR con Google Authenticator\n2. O ingresa la clave manual\n3. Confirma con un código de 6 dígitos");
+            result.put("instructions",
+                    "1. Escanea el QR con Google Authenticator\n2. O ingresa la clave manual\n3. Confirma con un código de 6 dígitos");
             result.put("nextStep", "Usa POST /api/two-factor/google/confirm con el código generado");
             result.put("setupTime", System.currentTimeMillis());
 
@@ -111,16 +114,16 @@ public class TwoFactorService {
 
     /**
      * MÉTODO MEJORADO: Llama al setup completo y devuelve solo el secret
-     * EVITA duplicación de lógica y transacciones conflictivas
+     * EVITA duplicación de lógica y usa repositorio directo
      */
     public String enableGoogleAuthenticator(Long userId) {
         try {
-            System.out.println("🔧 Habilitando Google Auth (delegando a setupCompleto)");
-            
-            // Usar el método completo que ya funciona sin transacciones
+            System.out.println("🔧 Habilitando Google Auth (delegando a setupCompleto con repo directo)");
+
+            // Usar el método completo que funciona con repositorio directo
             Map<String, Object> setup = setupGoogleAuthenticatorComplete(userId);
             String secret = (String) setup.get("secret");
-            
+
             System.out.println("✅ Secret obtenido del setup completo: " + secret.substring(0, 4) + "...");
             return secret;
 
@@ -166,17 +169,19 @@ public class TwoFactorService {
 
     /**
      * CONFIRMACIÓN SIN TRANSACCIONES: Verifica código y activa Google Authenticator
+     * NOTA: Usa repositorio directo para evitar conflictos JPA
      */
     public boolean confirmGoogleAuthenticator(Long userId, String code) {
         try {
-            // Usar UserService en lugar de Repository directo
-            User user = userService.getUserById(userId);
+            // Usar REPOSITORIO DIRECTO en lugar de UserService
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
             if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
                 throw new RuntimeException("Google Authenticator no configurado. Ejecuta /setup primero.");
             }
 
-            System.out.println("🔐 === CONFIRMANDO GOOGLE AUTHENTICATOR (SIN TRANSACCIONES) ===");
+            System.out.println("🔐 === CONFIRMANDO GOOGLE AUTHENTICATOR (REPOSITORIO DIRECTO) ===");
             System.out.println("  - Usuario: " + user.getEmail());
             System.out.println("  - Código: " + code);
 
@@ -185,12 +190,12 @@ public class TwoFactorService {
 
             if (isValid) {
                 try {
-                    // Activar 2FA usando UserService (maneja transacciones internamente)
+                    // Activar 2FA usando REPOSITORIO DIRECTO
                     user.setTwoFactorEnabled(true);
                     user.setGoogleAuthEnabled(true);
-                    userService.save(user);
+                    userRepository.save(user);
 
-                    System.out.println("  ✅ Google Auth ACTIVADO exitosamente");
+                    System.out.println("  ✅ Google Auth ACTIVADO con repositorio directo");
                     return true;
                 } catch (Exception saveError) {
                     System.err.println("❌ Error guardando activación: " + saveError.getMessage());
