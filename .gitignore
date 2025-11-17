@@ -1,0 +1,166 @@
+# ==================================================
+# .gitignore para Spring Boot (Maven) + Railway
+# ==================================================
+
+# ===== ARCHIVOS COMPILADOS Y TEMPORALES =====
+*.class
+*.log
+*.ctxt
+
+# ===== DIRECTORIOS DE COMPILACIÓN MAVEN =====
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ===== ARCHIVOS DE CONFIGURACIÓN SENSIBLES =====
+# IMPORTANTE: application.yml se incluye en el repo para Railway
+# pero asegúrate de usar variables de entorno para datos sensibles
+
+# Archivos de configuración local (si los creas)
+application-local.yml
+application-dev.yml
+application-prod.yml
+application-secret.yml
+
+# Archivos de propiedades con credenciales
+*.properties
+!application.yml
+
+# ===== IDEs Y EDITORES =====
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# ===== SISTEMAS OPERATIVOS =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.tmp
+*.temp
+Desktop.ini
+
+# Linux
+*~
+
+# ===== LOGS Y ARCHIVOS TEMPORALES =====
+*.log
+*.log.*
+*.out
+logs/
+spring.log
+
+# ===== ARCHIVOS DE BACKUP =====
+*.bak
+*.swp
+*.swo
+*~
+
+# ===== ARCHIVOS DE BASE DE DATOS LOCAL =====
+# H2 Database (si usas H2 para desarrollo)
+*.h2.db
+*.trace.db
+*.lock.db
+
+# SQLite (si usas SQLite para desarrollo)
+*.sqlite
+*.sqlite3
+*.db
+
+# ===== ARCHIVOS DE MAVEN =====
+# Dependency reduced pom
+dependency-reduced-pom.xml
+
+# ===== ARCHIVOS DE TESTING =====
+# Surefire reports
+**/target/surefire-reports/
+**/target/failsafe-reports/
+
+# ===== ARCHIVOS DE DESPLIEGUE =====
+# JAR files (se generan automáticamente)
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Excepción: mantener maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ===== VARIABLES DE ENTORNO LOCALES =====
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# ===== ARCHIVOS DE RAILWAY =====
+# Railway CLI puede generar archivos temporales
+.railway/
+
+# ===== ARCHIVOS DE DOCKER (si los usas localmente) =====
+Dockerfile.local
+docker-compose.override.yml
+
+# ===== ARCHIVOS DE CONFIGURACIÓN DE HERRAMIENTAS =====
+# STS (Spring Tool Suite)
+.apt_generated
+.springBeans
+
+# JRebel
+rebel.xml
+
+# Code coverage reports
+jacoco.exec
+jacoco/
+
+# ===== ARCHIVOS DE CACHE =====
+.cache/
+.gradle/
+
+# ===== OTROS ARCHIVOS TEMPORALES =====
+hs_err_pid*
+replay_pid*
+
+# ==================================================
+# NOTAS IMPORTANTES PARA RAILWAY:
+# ==================================================
+# 1. application.yml SÍ se incluye en el repo
+# 2. Usar variables de entorno para datos sensibles
+# 3. Railway leerá application.yml y aplicará las variables
+# 4. Los secrets se configuran en el dashboard de Railway
+# ==================================================
