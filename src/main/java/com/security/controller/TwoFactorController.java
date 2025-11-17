@@ -26,7 +26,7 @@ import java.util.Map;
 import com.security.service.BackupCodeService;
 
 @RestController
-@RequestMapping("/api/two-factor")
+@RequestMapping("/api/2fa")
 @CrossOrigin(origins = "*")
 public class TwoFactorController {
 
@@ -40,13 +40,13 @@ public class TwoFactorController {
 
     // ===== GOOGLE AUTHENTICATOR =====
 
-    @PostMapping("/google/setup")
+    @PostMapping("/google/enable")
     @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> setupGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
+    public ResponseEntity<?> enableGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
         try {
             // Setup completo en una sola llamada
             Map<String, Object> setupData = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
-
+            
             return ResponseEntity.ok(new ApiResponse(true,
                     "Google Authenticator configurado exitosamente. Escanea el QR con tu app y confirma con un código de 6 dígitos.",
                     setupData));
@@ -56,17 +56,19 @@ public class TwoFactorController {
         }
     }
 
-    @PostMapping("/google/enable")
+    @PostMapping("/google/setup")
     @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> enableGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
+    public ResponseEntity<?> setupGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
         try {
-            String secret = twoFactorService.enableGoogleAuthenticator(userPrincipal.getId());
+            // Setup completo en una sola llamada
+            Map<String, Object> setupData = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
+            
             return ResponseEntity.ok(new ApiResponse(true,
-                    "Google Authenticator setup initiated. Get QR code from /api/2fa/google/qrcode",
-                    Map.of("secret", secret)));
+                    "Google Authenticator configurado exitosamente. Escanea el QR con tu app y confirma con un código de 6 dígitos.",
+                    setupData));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
+                    .body(new ApiResponse(false, "Error configurando Google Authenticator: " + e.getMessage()));
         }
     }
 
