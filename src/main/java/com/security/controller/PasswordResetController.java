@@ -1,10 +1,12 @@
 package com.security.controller;
 
 import com.security.service.PasswordResetService;
+import com.security.dto.request.ResetPasswordRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
 import java.util.Map;
 
 @RestController
@@ -67,19 +69,25 @@ public class PasswordResetController {
     }
 
     /**
-     * Resetear contraseña
+     * Resetear contraseña con token (desde email)
      */
     @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestParam String token, @RequestParam String password) {
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         try {
-            // Validar que la contraseña no esté vacía
-            if (password == null || password.trim().length() < 8) {
+            // Validar que los datos no estén vacíos
+            if (request.getToken() == null || request.getToken().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "message", "Token requerido"));
+            }
+
+            if (request.getNewPassword() == null || request.getNewPassword().trim().length() < 8) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "success", false,
                         "message", "La contraseña debe tener al menos 8 caracteres"));
             }
 
-            boolean success = passwordResetService.resetPassword(token, password);
+            boolean success = passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
 
             if (success) {
                 return ResponseEntity.ok(Map.of(
@@ -93,9 +101,12 @@ public class PasswordResetController {
             }
 
         } catch (Exception e) {
+            System.err.println("Error en reset-password: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of(
                     "success", false,
                     "message", "Error al actualizar la contraseña. Intenta nuevamente."));
         }
     }
+
 }
