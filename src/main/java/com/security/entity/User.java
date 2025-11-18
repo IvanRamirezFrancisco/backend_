@@ -31,8 +31,8 @@ public class User {
     @Column(name = "last_name", nullable = false)
     private String lastName;
 
-    @Size(min = 3, max = 30)
-    @Column(nullable = true, unique = true)
+    // Username es opcional - validación manual en service si es necesario
+    @Column(nullable = true, unique = true, length = 30)
     private String username;
 
     @NotBlank

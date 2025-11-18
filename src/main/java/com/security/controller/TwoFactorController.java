@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,15 +42,14 @@ public class TwoFactorController {
     // ===== GOOGLE AUTHENTICATOR =====
 
     @PostMapping("/google/enable")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> enableGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse> enableGoogleAuthenticator(@AuthenticationPrincipal UserPrincipal userPrincipal) {
         try {
-            // Setup completo en una sola llamada
-            Map<String, Object> setupData = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
+            // Llama al servicio para generar el secreto y el QR
+            Map<String, Object> setupInfo = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
 
-            return ResponseEntity.ok(new ApiResponse(true,
-                    "Google Authenticator configurado exitosamente. Escanea el QR con tu app y confirma con un código de 6 dígitos.",
-                    setupData));
+            return ResponseEntity
+                    .ok(new ApiResponse(true, "Google Authenticator setup initiated. Scan QR code.", setupInfo));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Error configurando Google Authenticator: " + e.getMessage()));
