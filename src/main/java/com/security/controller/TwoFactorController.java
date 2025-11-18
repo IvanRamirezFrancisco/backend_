@@ -56,6 +56,19 @@ public class TwoFactorController {
         }
     }
 
+    @PostMapping("/google/disable")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> disableGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
+        try {
+            twoFactorService.disableSpecificTwoFactor(userPrincipal.getId(), "GOOGLE_AUTHENTICATOR");
+            return ResponseEntity.ok(new ApiResponse(true,
+                    "Google Authenticator desactivado exitosamente"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse(false, e.getMessage()));
+        }
+    }
+
     @PostMapping("/google/setup")
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<?> setupGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
@@ -278,24 +291,14 @@ public class TwoFactorController {
             boolean isValid = twoFactorService.confirmGoogleAuthenticator(userPrincipal.getId(), code);
 
             if (isValid) {
-                // Generar códigos de backup automáticamente después de habilitar Google Auth
-                try {
-                    List<String> backupCodes = backupCodeService.generateBackupCodes(userPrincipal.getId());
+                // ✅ SOLO activar Google Auth - NO generar códigos de backup automáticamente
+                Map<String, Object> result = new HashMap<>();
+                result.put("message", "Google Authenticator habilitado exitosamente!");
+                result.put("googleAuthEnabled", true);
+                result.put("info", "Puedes generar códigos de respaldo por separado si lo deseas desde el dashboard.");
 
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("message", "Google Authenticator habilitado exitosamente!");
-                    result.put("backupCodes", backupCodes);
-                    result.put("backupCodesWarning",
-                            "Guarda estos códigos de respaldo en un lugar seguro. Solo se pueden usar una vez.");
-
-                    return ResponseEntity.ok(new ApiResponse(true,
-                            "Google Authenticator habilitado exitosamente!", result));
-                } catch (Exception backupError) {
-                    // Si falla la generación de backup codes, aún consideramos exitoso el Google
-                    // Auth
-                    return ResponseEntity.ok(new ApiResponse(true,
-                            "Google Authenticator habilitado exitosamente! (Nota: No se pudieron generar códigos de respaldo)"));
-                }
+                return ResponseEntity.ok(new ApiResponse(true,
+                        "Google Authenticator habilitado exitosamente!", result));
             } else {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false,
@@ -512,6 +515,37 @@ public class TwoFactorController {
             Map<String, Boolean> methods = twoFactorService.getAvailableTwoFactorMethods(userPrincipal.getId());
             return ResponseEntity.ok(new ApiResponse(true,
                     "Available 2FA methods retrieved", methods));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse(false, e.getMessage()));
+        }
+    }
+
+    @GetMapping("/dashboard-summary")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> getDashboardSummary(@CurrentUser UserPrincipal userPrincipal) {
+        try {
+            User user = userService.getUserById(userPrincipal.getId());
+            Map<String, Boolean> methods = twoFactorService.getAvailableTwoFactorMethods(userPrincipal.getId());
+
+            Map<String, Object> summary = new HashMap<>();
+            
+            // Métodos individuales con su estado
+            summary.put("methods", methods);
+            
+            // Estado general de 2FA
+            summary.put("twoFactorEnabled", user.getTwoFactorEnabled() != null ? user.getTwoFactorEnabled() : false);
+            
+            // Información adicional para el dashboard
+            Map<String, String> methodInfo = new HashMap<>();
+            methodInfo.put("GOOGLE_AUTHENTICATOR", "Autenticación con app móvil (Google Authenticator, Authy, etc.)");
+            methodInfo.put("SMS", "Códigos por mensaje de texto");
+            methodInfo.put("EMAIL", "Códigos por correo electrónico");
+            methodInfo.put("BACKUP_CODES", "Códigos de respaldo de un solo uso");
+            summary.put("methodDescriptions", methodInfo);
+
+            return ResponseEntity.ok(new ApiResponse(true,
+                    "Dashboard 2FA summary retrieved", summary));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, e.getMessage()));
