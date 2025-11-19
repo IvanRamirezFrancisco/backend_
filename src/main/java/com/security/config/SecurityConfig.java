@@ -96,6 +96,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/verify").permitAll()
                         .requestMatchers("/api/auth/resend-verification").permitAll()
                         .requestMatchers("/api/auth/forgot-password").permitAll()
+                        .requestMatchers("/api/auth/validate-reset-token").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
                         .requestMatchers("/api/test/public").permitAll()
                         .requestMatchers("/actuator/**").permitAll()

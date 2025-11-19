@@ -147,7 +147,16 @@ public class EmailService {
         System.out.println("🌐 Base URL: " + baseUrl);
 
         // Crear URL de reseteo de contraseña usando baseUrl (FRONTEND_URL)
-        String resetUrl = baseUrl + "/reset-password?token=" + token;
+        String frontendUrl = (baseUrl != null) ? baseUrl.trim() : "";
+        // Si el FRONTEND_URL fue configurado sin esquema, añadir https:// por seguridad
+        if (!frontendUrl.startsWith("http://") && !frontendUrl.startsWith("https://") && !frontendUrl.isEmpty()) {
+            frontendUrl = "https://" + frontendUrl;
+        }
+        if (frontendUrl.endsWith("/")) {
+            frontendUrl = frontendUrl.substring(0, frontendUrl.length() - 1);
+        }
+        String resetUrl = frontendUrl + "/reset-password?token=" + token;
+        System.out.println("🔗 Reset URL construido: " + resetUrl);
         String htmlContent = buildPasswordResetEmailTemplate(user.getFirstName(), resetUrl, token);
         String subject = "Recuperación de contraseña - AuthSystem";
 
