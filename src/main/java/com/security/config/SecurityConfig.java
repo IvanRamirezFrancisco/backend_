@@ -136,10 +136,9 @@ public class SecurityConfig {
                 // Autenticación
                 .requestMatchers("/api/auth/**").permitAll()
                 
-                // 2FA endpoints para login (sin autenticación)
-                .requestMatchers(HttpMethod.POST, "/api/2fa/verify").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/2fa/send-login-code").permitAll()
-                .requestMatchers(HttpMethod.OPTIONS, "/api/2fa/**").permitAll()
+                // 2FA endpoints para login (sin autenticación) - MUY IMPORTANTE
+                .requestMatchers("/api/2fa/verify").permitAll()
+                .requestMatchers("/api/2fa/send-login-code").permitAll()
                 
                 // Health y test
                 .requestMatchers("/api/test/public").permitAll()
@@ -153,8 +152,11 @@ public class SecurityConfig {
                 .requestMatchers("/h2-console/**").permitAll()
                 
                 // ========== ENDPOINTS PROTEGIDOS ==========
-                // 2FA setup/config (requiere estar logueado)
-                .requestMatchers("/api/2fa/**").authenticated()
+                // 2FA setup/config (requiere estar logueado) - EXCLUYE los ya permitidos
+                .requestMatchers("/api/2fa/google/**").authenticated()
+                .requestMatchers("/api/2fa/email/**").authenticated()
+                .requestMatchers("/api/2fa/backup-codes/**").authenticated()
+                .requestMatchers("/api/2fa/status").authenticated()
                 
                 // Test endpoints
                 .requestMatchers("/api/test/protected").authenticated()

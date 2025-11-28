@@ -213,7 +213,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<?> verifyTwoFactor(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> verifyTwoFactor(@RequestBody(required = false) Map<String, String> request) {
         String email = null;
         String code = null;
         String method = null;
@@ -222,6 +222,15 @@ public class TwoFactorController {
             System.out.println("========================================");
             System.out.println("🔐 INICIO VERIFICACIÓN 2FA");
             System.out.println("========================================");
+            
+            // Validar que el request no sea null
+            if (request == null) {
+                System.out.println("❌ Request body es NULL");
+                return ResponseEntity.badRequest()
+                        .body(new ApiResponse(false, "Request body es requerido"));
+            }
+            
+            System.out.println("📦 Request recibido: " + request);
             
             email = request.get("email");
             code = request.get("code");
