@@ -115,25 +115,25 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         // Configurar CORS usando la configuración del CorsFilter bean
         http.cors(cors -> cors.configurationSource(request -> {
-                    CorsConfiguration config = new CorsConfiguration();
-                    config.setAllowedOrigins(Arrays.asList(
-                            "http://localhost:4200",
-                            "http://localhost:4300",
-                            "http://127.0.0.1:4200",
-                            "http://127.0.0.1:4300",
-                            "https://fronlogin-production.up.railway.app",
-                            "https://frontendapp-production.up.railway.app"));
-                    config.setAllowedOriginPatterns(Arrays.asList(
-                            "https://*.up.railway.app",
-                            "https://*.railway.app"));
-                    config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
-                    config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin", 
-                            "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
-                    config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
-                    config.setAllowCredentials(true);
-                    config.setMaxAge(3600L);
-                    return config;
-                }))
+            CorsConfiguration config = new CorsConfiguration();
+            config.setAllowedOrigins(Arrays.asList(
+                    "http://localhost:4200",
+                    "http://localhost:4300",
+                    "http://127.0.0.1:4200",
+                    "http://127.0.0.1:4300",
+                    "https://fronlogin-production.up.railway.app",
+                    "https://frontendapp-production.up.railway.app"));
+            config.setAllowedOriginPatterns(Arrays.asList(
+                    "https://*.up.railway.app",
+                    "https://*.railway.app"));
+            config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
+            config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin",
+                    "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
+            config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
+            config.setAllowCredentials(true);
+            config.setMaxAge(3600L);
+            return config;
+        }))
                 .csrf(csrf -> csrf.disable())
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -147,6 +147,9 @@ public class SecurityConfig {
                                 .includeSubDomains(false) // Más flexible para subdominios
                                 .preload(false))) // No forzar preload en navegadores
                 .authorizeHttpRequests(authz -> authz
+                        // ===== PERMITIR TODAS LAS PETICIONES OPTIONS (CORS PREFLIGHT) =====
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+                        
                         // ===== ENDPOINTS PÚBLICOS =====
                         .requestMatchers("/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()
@@ -176,9 +179,14 @@ public class SecurityConfig {
                         .requestMatchers("/api/2fa/**").authenticated()
 
                         // ===== TODO LO DEMÁS =====
-                        .anyRequest().authenticated());
+                        .anyRequest().authenticated())
+                // Deshabilitar form login y http basic para evitar redirecciones 302
+                .formLogin(form -> form.disable())
+                .httpBasic(basic -> basic.disable());
 
         http.authenticationProvider(authenticationProvider());
+        // Agregar CorsFilter ANTES del filtro JWT para manejar OPTIONS preflight
+        http.addFilterBefore(corsFilter(), UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

@@ -36,17 +36,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
                 .allowedOrigins(
-                    "http://localhost:4200",
-                    "http://localhost:8080",
-                    "https://fronlogin-production.up.railway.app",
-                    "https://frontendapp-production.up.railway.app"
-                )
+                        "http://localhost:4200",
+                        "http://localhost:8080",
+                        "https://fronlogin-production.up.railway.app",
+                        "https://frontendapp-production.up.railway.app")
                 .allowedOriginPatterns(
-                    "https://*.railway.app",
-                    "https://*.up.railway.app"
-                )
+                        "https://*.railway.app",
+                        "https://*.up.railway.app")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
-                .allowedHeaders("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "Cache-Control")
+                .allowedHeaders("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With",
+                        "Cache-Control")
                 .exposedHeaders("Authorization")
                 .allowCredentials(true)
                 .maxAge(3600);

@@ -222,7 +222,8 @@ public class TwoFactorController {
             System.out.println("🔐 === VERIFICACIÓN 2FA ===");
             System.out.println("  - Email: " + email);
             System.out.println("  - Método: " + method);
-            System.out.println("  - Código: " + (code != null ? code.substring(0, Math.min(2, code.length())) + "****" : "null"));
+            System.out.println(
+                    "  - Código: " + (code != null ? code.substring(0, Math.min(2, code.length())) + "****" : "null"));
 
             if (email == null || code == null || method == null) {
                 return ResponseEntity.badRequest()
@@ -240,8 +241,9 @@ public class TwoFactorController {
             User user = userOptional.get();
             System.out.println("  - Usuario encontrado: ID " + user.getId());
             System.out.println("  - Google Auth Enabled: " + user.getGoogleAuthEnabled());
-            System.out.println("  - Tiene Secret: " + (user.getGoogleAuthSecret() != null && !user.getGoogleAuthSecret().isEmpty()));
-            
+            System.out.println("  - Tiene Secret: "
+                    + (user.getGoogleAuthSecret() != null && !user.getGoogleAuthSecret().isEmpty()));
+
             boolean isValid = false;
 
             if ("GOOGLE_AUTHENTICATOR".equals(method)) {
@@ -249,7 +251,8 @@ public class TwoFactorController {
                 if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
                     System.err.println("❌ Usuario no tiene Google Auth configurado");
                     return ResponseEntity.badRequest()
-                            .body(new ApiResponse(false, "Google Authenticator no está configurado. Reconfigúralo en tu perfil."));
+                            .body(new ApiResponse(false,
+                                    "Google Authenticator no está configurado. Reconfigúralo en tu perfil."));
                 }
                 isValid = twoFactorService.verifyGoogleAuthenticatorForLogin(user.getId(), code);
             } else if ("EMAIL".equals(method)) {
