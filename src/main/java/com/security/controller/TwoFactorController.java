@@ -219,38 +219,53 @@ public class TwoFactorController {
             String code = request.get("code");
             String method = request.get("method");
 
+            System.out.println("🔐 === VERIFICACIÓN 2FA ===");
+            System.out.println("  - Email: " + email);
+            System.out.println("  - Método: " + method);
+            System.out.println("  - Código: " + (code != null ? code.substring(0, Math.min(2, code.length())) + "****" : "null"));
+
             if (email == null || code == null || method == null) {
                 return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Email, code and method are required"));
+                        .body(new ApiResponse(false, "Email, código y método son requeridos"));
             }
 
             // Buscar usuario por email
             Optional<User> userOptional = userService.findByEmail(email);
             if (!userOptional.isPresent()) {
+                System.err.println("❌ Usuario no encontrado: " + email);
                 return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "User not found"));
+                        .body(new ApiResponse(false, "Usuario no encontrado"));
             }
 
             User user = userOptional.get();
+            System.out.println("  - Usuario encontrado: ID " + user.getId());
+            System.out.println("  - Google Auth Enabled: " + user.getGoogleAuthEnabled());
+            System.out.println("  - Tiene Secret: " + (user.getGoogleAuthSecret() != null && !user.getGoogleAuthSecret().isEmpty()));
+            
             boolean isValid = false;
 
             if ("GOOGLE_AUTHENTICATOR".equals(method)) {
-                // CORRECCIÓN CRÍTICA: Usar método específico para login que NO modifica BD
+                // Verificar que el usuario tenga Google Auth configurado
+                if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
+                    System.err.println("❌ Usuario no tiene Google Auth configurado");
+                    return ResponseEntity.badRequest()
+                            .body(new ApiResponse(false, "Google Authenticator no está configurado. Reconfigúralo en tu perfil."));
+                }
                 isValid = twoFactorService.verifyGoogleAuthenticatorForLogin(user.getId(), code);
             } else if ("EMAIL".equals(method)) {
-                // CORREGIDO: Usar el método que existe en TwoFactorService
                 isValid = twoFactorService.verifyEmailCode(user.getId(), code);
             } else if ("BACKUP_CODE".equals(method)) {
-                // NUEVO: Verificación por código de backup
                 isValid = twoFactorService.verifyBackupCode(user.getId(), code);
             } else {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false,
-                                "Invalid verification method. Supported: GOOGLE_AUTHENTICATOR, EMAIL, BACKUP_CODE"));
+                                "Método de verificación inválido. Soportados: GOOGLE_AUTHENTICATOR, EMAIL, BACKUP_CODE"));
             }
 
+            System.out.println("  - Resultado verificación: " + (isValid ? "✅ VÁLIDO" : "❌ INVÁLIDO"));
+
             if (isValid) {
-                // CORREGIDO: Crear UserPrincipal y Authentication
+                // Crear UserPrincipal y Authentication
                 UserPrincipal userPrincipal = UserPrincipal.create(user);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userPrincipal, null, userPrincipal.getAuthorities());
@@ -272,16 +287,19 @@ public class TwoFactorController {
                 jwtResponse.setUser(userResponse);
                 jwtResponse.setTwoFactorRequired(false);
 
+                System.out.println("✅ Login 2FA exitoso para: " + email);
                 return ResponseEntity.ok(new ApiResponse(true,
-                        "Two-factor authentication successful", jwtResponse));
+                        "Autenticación de dos factores exitosa", jwtResponse));
             } else {
                 return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Invalid verification code"));
+                        .body(new ApiResponse(false, "Código de verificación inválido"));
             }
 
         } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
+            System.err.println("❌ ERROR en verificación 2FA: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse(false, "Error interno del servidor: " + e.getMessage()));
         }
     }
     /////////////////////////////////////////////////
