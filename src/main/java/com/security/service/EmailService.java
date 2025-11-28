@@ -121,14 +121,9 @@ public class EmailService {
                             <h2>Verifica tu cuenta</h2>
                             <p>Gracias por registrarte. Para completar tu registro, por favor verifica tu dirección de email.</p>
 
-                            <h3>Opción 1: Click en el enlace</h3>
                             <a href="%s" class="button">Verificar Email</a>
 
-                            <h3>Opción 2: Usa este código</h3>
-                            <div class="code">%s</div>
-                            <p>Copia y pega este código en la aplicación para verificar tu cuenta.</p>
-
-                            <p><strong>Este enlace y código expiran en 24 horas.</strong></p>
+                            <p><strong>Este enlace expira en 24 horas.</strong></p>
 
                             <p>Si no creaste esta cuenta, puedes ignorar este email.</p>
                         </div>
@@ -136,7 +131,7 @@ public class EmailService {
                 </body>
                 </html>
                 """
-                .formatted(userName, verificationUrl, token);
+                .formatted(userName, verificationUrl);
     }
 
     public void sendPasswordResetEmail(User user, String token) {
@@ -521,7 +516,7 @@ public class EmailService {
             System.err.println("💡 SOLUCIÓN: Configura Resend o Mailgun API Keys para envío de emails.");
 
             throw new RuntimeException(
-                    "Error al enviar código 2FA por email. Configura un proveedor de email alternativo (Resend/Mailgun) o usa SMS.",
+                    "Error al enviar código 2FA por email. Configura un proveedor de email alternativo (Resend/Mailgun).",
                     e);
         }
     }
@@ -801,14 +796,9 @@ public class EmailService {
                             <h2>Hola %s</h2>
                             <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en AuthSystem.</p>
 
-                            <h3>Opción 1: Click en el enlace</h3>
                             <a href="%s" class="button">Restablecer Contraseña</a>
 
-                            <h3>Opción 2: Usa este token</h3>
-                            <div class="token">%s</div>
-                            <p>Copia y pega este token en la aplicación para restablecer tu contraseña.</p>
-
-                            <p><strong>Este enlace y token expiran en 1 hora.</strong></p>
+                            <p><strong>Este enlace expira en 1 hora.</strong></p>
 
                             <div class="warning">
                                 <strong>⚠️ Importante:</strong><br>
@@ -825,7 +815,7 @@ public class EmailService {
                     </div>
                 </body>
                 </html>
-                """.formatted(userName, resetUrl, token);
+                """.formatted(userName, resetUrl);
     }
 
     private String build2FAEmailTemplate(String userName, String code) {

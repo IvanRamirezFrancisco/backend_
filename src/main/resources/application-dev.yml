@@ -1,0 +1,10 @@
+# Configuración para desarrollo local
+app:
+  security:
+    https:
+      force: false  # Deshabilitar HTTPS forzado en desarrollo
+
+spring:
+  devtools:
+    restart:
+      enabled: true

@@ -280,7 +280,6 @@ public class UserService {
         userResponse.setPhone(user.getPhone());
         userResponse.setEnabled(user.getEnabled());
         userResponse.setGoogleAuthEnabled(user.getGoogleAuthEnabled());
-        userResponse.setSmsEnabled(user.getSmsEnabled());
         userResponse.setEmailEnabled(user.getEmailEnabled());
         userResponse.setBackupCodesEnabled(user.getBackupCodesEnabled());
         userResponse.setTwoFactorEnabled(user.getTwoFactorEnabled());

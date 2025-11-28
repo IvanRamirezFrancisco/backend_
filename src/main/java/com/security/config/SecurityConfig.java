@@ -6,6 +6,8 @@ import com.security.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -18,8 +20,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 import java.util.Arrays;
 
@@ -57,37 +59,67 @@ public class SecurityConfig {
         return authConfig.getAuthenticationManager();
     }
 
+    /**
+     * Filtro CORS con MÁXIMA PRIORIDAD para ejecutarse ANTES de Spring Security
+     */
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public CorsFilter corsFilter() {
+        CorsConfiguration config = new CorsConfiguration();
 
-        // ✅ Orígenes específicos para desarrollo y producción
-        configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:3000",
-                "http://localhost:8080",
+        // Orígenes permitidos explícitamente
+        config.setAllowedOrigins(Arrays.asList(
                 "http://localhost:4200",
-                "https://fronlogin-production.up.railway.app"));
+                "http://localhost:4300",
+                "http://127.0.0.1:4200",
+                "http://127.0.0.1:4300"));
 
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        // También permitir patrones para producción
+        config.setAllowedOriginPatterns(Arrays.asList(
+                "https://*.up.railway.app",
+                "https://*.netlify.app",
+                "https://*.vercel.app"));
+
+        // Métodos HTTP permitidos
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
+
+        // Headers permitidos
+        config.setAllowedHeaders(Arrays.asList("*"));
+
+        // Headers expuestos
+        config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
+
+        // Permitir credenciales
+        config.setAllowCredentials(true);
+
+        // Cache preflight por 1 hora
+        config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
+        source.registerCorsConfiguration("/**", config);
+
+        return new CorsFilter(source);
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        // CORS ya se maneja con CorsFilter de alta prioridad, así que aquí solo lo
+        // habilitamos
+        http.cors(cors -> {
+        })
                 .csrf(csrf -> csrf.disable())
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Configurar headers de seguridad compatibles con navegadores
+                .headers(headers -> headers
+                        .frameOptions(frameOptions -> frameOptions.sameOrigin()) // Permite iframes del mismo origen
+                        .contentTypeOptions(contentType -> {
+                        }) // Previene MIME type sniffing
+                        .httpStrictTransportSecurity(hstsConfig -> hstsConfig
+                                .maxAgeInSeconds(31536000)
+                                .includeSubDomains(false) // Más flexible para subdominios
+                                .preload(false))) // No forzar preload en navegadores
                 .authorizeHttpRequests(authz -> authz
-                        // ===== ENDPOINTS PÚBLICOS =====
-                        // ===== ENDPOINTS PÚBLICOS =====
-                        // ===== ENDPOINTS PÚBLICOS =====
                         // ===== ENDPOINTS PÚBLICOS =====
                         .requestMatchers("/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()

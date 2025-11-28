@@ -6,6 +6,7 @@ import java.util.Set;
 public class JwtAuthResponse {
 
     private String accessToken;
+    private String refreshToken;
     private String tokenType = "Bearer";
     private Long expiresIn;
     private LocalDateTime expiresAt;
@@ -70,5 +71,13 @@ public class JwtAuthResponse {
 
     public void setTwoFactorRequired(boolean twoFactorRequired) {
         this.twoFactorRequired = twoFactorRequired;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
     }
 }

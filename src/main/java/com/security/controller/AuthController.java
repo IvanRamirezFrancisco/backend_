@@ -11,9 +11,11 @@ import com.security.service.AuthService;
 import com.security.service.VerificationService;
 import com.security.service.UserService;
 import com.security.service.PasswordResetService;
+import com.security.service.LoginSecurityService;
 
 import java.util.Map;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -52,6 +54,9 @@ public class AuthController {
     @Autowired
     private PasswordResetService passwordResetService;
 
+    @Autowired
+    private LoginSecurityService loginSecurityService;
+
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
         try {
@@ -81,38 +86,93 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest,
+            HttpServletRequest request) {
         try {
-            User user = userService.findByEmail(loginRequest.getEmail()).orElse(null);
+            String email = loginRequest.getEmail();
+            String clientIp = getClientIP(request);
+
+            // ===== VERIFICACIÓN DE BLOQUEO POR FUERZA BRUTA =====
+            // Verificar si la cuenta está bloqueada por intentos fallidos
+            if (loginSecurityService.isAccountLocked(email)) {
+                long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(email);
+                String message = String.format(
+                        "Cuenta bloqueada temporalmente por múltiples intentos fallidos. " +
+                                "Intenta de nuevo en %d minutos.",
+                        remainingMinutes > 0 ? remainingMinutes : 1);
+
+                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                        .body(new ApiResponse(false, message));
+            }
+
+            // También verificar bloqueo por IP
+            if (loginSecurityService.isAccountLocked(clientIp)) {
+                long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(clientIp);
+                String message = String.format(
+                        "Demasiados intentos desde esta IP. Intenta de nuevo en %d minutos.",
+                        remainingMinutes > 0 ? remainingMinutes : 1);
+
+                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                        .body(new ApiResponse(false, message));
+            }
+
+            // ===== AUTENTICACIÓN =====
+            User user = userService.findByEmail(email).orElse(null);
             if (user == null || !passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+                // Registrar intento fallido por email e IP
+                loginSecurityService.recordFailedAttempt(email);
+                loginSecurityService.recordFailedAttempt(clientIp);
+
+                // Verificar si ahora está bloqueado para dar mensaje apropiado
+                if (loginSecurityService.isAccountLocked(email)) {
+                    long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(email);
+                    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                            .body(new ApiResponse(false,
+                                    String.format("Has excedido el número máximo de intentos. " +
+                                            "Cuenta bloqueada por %d minutos.", remainingMinutes)));
+                }
+
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(new ApiResponse(false, "Credenciales inválidas"));
             }
 
+            // ===== LOGIN EXITOSO - Limpiar intentos fallidos =====
+            loginSecurityService.clearFailedAttempts(email);
+            loginSecurityService.clearFailedAttempts(clientIp);
+
             UserResponse userResponse = userService.convertToUserResponse(user);
 
-            // Si el usuario tiene cualquier método 2FA activado, pide 2FA y NO envía el
-            // token
-            boolean hasTwoFactorEnabled = Boolean.TRUE.equals(user.getGoogleAuthEnabled()) ||
-                    Boolean.TRUE.equals(user.getSmsEnabled()) ||
-                    Boolean.TRUE.equals(user.getEmailEnabled()) ||
-                    Boolean.TRUE.equals(user.getBackupCodesEnabled());
+            // ===== LÓGICA DE 2FA CORREGIDA =====
+            // Solo Google Auth y Email son métodos ACTIVOS de 2FA
+            // Backup Codes son un método de RESPALDO (no activan 2FA por sí solos)
+            boolean hasGoogleAuth = Boolean.TRUE.equals(user.getGoogleAuthEnabled());
+            boolean hasEmail2FA = Boolean.TRUE.equals(user.getEmailEnabled());
+            boolean hasBackupCodes = Boolean.TRUE.equals(user.getBackupCodesEnabled());
 
-            if (hasTwoFactorEnabled) {
+            // 2FA se requiere SOLO si hay al menos un método principal activo (Google o
+            // Email)
+            boolean requiresTwoFactor = hasGoogleAuth || hasEmail2FA;
+
+            if (requiresTwoFactor) {
                 Map<String, Object> data = new HashMap<>();
                 data.put("twoFactorRequired", true);
                 data.put("user", userResponse);
 
                 // Indicar qué métodos 2FA están disponibles
                 Map<String, Boolean> availableMethods = new HashMap<>();
-                availableMethods.put("GOOGLE_AUTHENTICATOR", Boolean.TRUE.equals(user.getGoogleAuthEnabled()));
-                availableMethods.put("SMS", Boolean.TRUE.equals(user.getSmsEnabled()));
-                availableMethods.put("EMAIL", Boolean.TRUE.equals(user.getEmailEnabled()));
-                availableMethods.put("BACKUP_CODE", Boolean.TRUE.equals(user.getBackupCodesEnabled()));
+                availableMethods.put("GOOGLE_AUTHENTICATOR", hasGoogleAuth);
+                availableMethods.put("EMAIL", hasEmail2FA);
+                // Backup codes disponibles como alternativa solo si existen Y hay otro método
+                // activo
+                availableMethods.put("BACKUP_CODE", hasBackupCodes);
                 data.put("availableMethods", availableMethods);
 
                 return ResponseEntity.ok(new ApiResponse(true, "Two-factor authentication required", data));
             }
+
+            // Si NO tiene métodos 2FA principales activos (Google/Email), login normal
+            // Los backup codes quedan almacenados pero inactivos hasta que se active otro
+            // método
 
             // Si NO tiene 2FA, genera el token y responde normalmente
             String token = jwtTokenProvider.generateTokenFromUserId(
@@ -123,11 +183,42 @@ public class AuthController {
             jwtResponse.setAccessToken(token);
             jwtResponse.setTokenType("Bearer");
             jwtResponse.setUser(userResponse);
-            return ResponseEntity.ok(new ApiResponse(true, "Login successful", jwtResponse));
+            return ResponseEntity.ok(new ApiResponse(true, "Inicio de sesión exitoso", jwtResponse));
         } catch (Exception e) {
+            // Traducir mensajes de error técnicos a español
+            String errorMessage = traducirError(e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiResponse(false, "Error en login: " + e.getMessage()));
+                    .body(new ApiResponse(false, errorMessage));
         }
+    }
+
+    /**
+     * Traduce mensajes de error técnicos a español amigable
+     */
+    private String traducirError(String mensaje) {
+        if (mensaje == null) {
+            return "Error interno del servidor. Por favor intenta de nuevo.";
+        }
+
+        // Mapeo de errores comunes
+        if (mensaje.contains("Transaction silently rolled back")) {
+            return "Error temporal en el servidor. Por favor intenta de nuevo.";
+        }
+        if (mensaje.contains("Connection refused") || mensaje.contains("connect")) {
+            return "Error de conexión con el servidor. Por favor intenta más tarde.";
+        }
+        if (mensaje.contains("timeout") || mensaje.contains("Timeout")) {
+            return "El servidor tardó demasiado en responder. Intenta de nuevo.";
+        }
+        if (mensaje.contains("Unauthorized") || mensaje.contains("401")) {
+            return "Credenciales inválidas. Verifica tu correo y contraseña.";
+        }
+        if (mensaje.contains("locked") || mensaje.contains("bloqueada")) {
+            return mensaje; // Ya está en español
+        }
+
+        // Si no es un error conocido, mostrar mensaje genérico
+        return "Ocurrió un error inesperado. Por favor intenta de nuevo.";
     }
 
     @PostMapping("/refresh")
@@ -242,6 +333,42 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ApiResponse(false, "Error checking username availability: " + e.getMessage()));
         }
+    }
+
+    /**
+     * Obtiene la IP real del cliente considerando proxies y balanceadores de carga
+     */
+    private String getClientIP(HttpServletRequest request) {
+        // Lista de headers que pueden contener la IP real del cliente
+        String[] headersToCheck = {
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR",
+                "HTTP_X_FORWARDED",
+                "HTTP_X_CLUSTER_CLIENT_IP",
+                "HTTP_CLIENT_IP",
+                "HTTP_FORWARDED_FOR",
+                "HTTP_FORWARDED",
+                "HTTP_VIA",
+                "REMOTE_ADDR"
+        };
+
+        for (String header : headersToCheck) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                // X-Forwarded-For puede contener múltiples IPs separadas por coma
+                // La primera es la IP del cliente original
+                if (ip.contains(",")) {
+                    ip = ip.split(",")[0].trim();
+                }
+                return ip;
+            }
+        }
+
+        // Si no hay headers de proxy, usar la IP directa
+        return request.getRemoteAddr();
     }
 
 }

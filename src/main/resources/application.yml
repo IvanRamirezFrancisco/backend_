@@ -1,29 +1,40 @@
 server:
   port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
 
 spring:
   application:
     name: auth-system
 
   datasource:
-    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&connectTimeout=10000&socketTimeout=30000
     username: ${MYSQLUSER}
     password: ${MYSQLPASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
+    open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
+        format_sql: false
 
   mail:
     host: ${MAIL_HOST:smtp-relay.brevo.com}
-    port: ${MAIL_PORT}
-    username: ${MAIL_USERNAME:9a5a33001@smtp-brevo.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
       mail:
@@ -33,21 +44,25 @@ spring:
             enable: false
           starttls:
             enable: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
-        debug: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+        debug: false
 
 app:
   security:
+    # JWT seguro mejorado
     jwt:
-      secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
-      expiration: 86400000
-      refresh-expiration: 604800000
+      secret: ${JWT_SECRET:casa-musica-castillo-super-secret-key-2024-production-secure}
+      access-token-expiration: 900000      # 15 minutos
+      refresh-token-expiration: 86400000   # 24 horas
+      issuer: casa-musica-castillo
 
+    # Autenticación de dos factores
     two-factor:
-      issuer: "AuthSystem"
+      issuer: "Casa de Música Castillo"
 
+    # Verificación de usuarios
     verification:
       email:
         expiration: 86400000
@@ -55,11 +70,70 @@ app:
         expiration: 300000
         max-attempts: 3
 
+    # Rate limiting mejorado
     rate-limiting:
       max-login-attempts: 5
       lockout-duration: 900000
 
+    # Configuración de login seguro
+    login:
+      max-attempts: 5
+      lockout-duration-minutes: 15
+      progressive-delay: true
+
+    # Configuración de sesiones
+    session:
+      inactivity-timeout-minutes: 15
+
+    # Recuperación de contraseña segura
+    password-reset:
+      token-expiration: 3600000  # 1 hora en producción
+      max-attempts-per-hour: 2
+      max-attempts-per-day: 3
+      progressive-delay: true
+      cleanup-interval: 86400000  # 24 horas
+      base-delay-minutes: 15
+      max-delay-minutes: 480
+
+    # Configuración HTTPS
+    https:
+      force: true
+
+    # Content Security Policy
+    csp:
+      policy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' https:; frame-ancestors 'none';"
+
+    # Logging seguro
+    logging:
+      mask-sensitive-data: true
+      include-ip: true
+      detailed-audit: true
+
+    # Evaluación de vulnerabilidades
+    assessment:
+      enabled: true
+      sql-injection-patterns: true
+      xss-patterns: true
+      dependency-check: true
+
+    # Monitoreo de seguridad
+    monitoring:
+      enabled: true
+      suspicious-threshold: 5
+      alert-cooldown-minutes: 15
+
   base-url: ${FRONTEND_URL:http://localhost:4200}
+  
+  # Configuración OAuth2.0
+  oauth2:
+    authorization-code-expiration: 600      # 10 minutos
+    access-token-expiration: 3600           # 1 hora
+    refresh-token-expiration: 2592000       # 30 días
+    redirect-uri-validation: true
+
+  # Configuración CORS
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,https://casamusica.com}
   
   # Configuraciones de proveedores de email alternativos
   email:
@@ -84,10 +158,24 @@ app:
 
 logging:
   level:
-    com.security: DEBUG
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.boot.web.servlet: DEBUG
-    org.springframework.mail: DEBUG
-    org.springframework.boot.autoconfigure.mail: DEBUG
+    root: WARN
+    com.security: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Health checks para Railway
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

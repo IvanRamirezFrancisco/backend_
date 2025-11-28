@@ -49,7 +49,6 @@ public class UserController {
                         // Estados 2FA
                         profileData.put("twoFactorEnabled", user.getTwoFactorEnabled());
                         profileData.put("googleAuthEnabled", user.getGoogleAuthEnabled());
-                        profileData.put("smsEnabled", user.getSmsEnabled());
                         profileData.put("emailEnabled", user.getEmailEnabled());
                         profileData.put("backupCodesEnabled", user.getBackupCodesEnabled());
 
@@ -81,7 +80,6 @@ public class UserController {
                                         user.getTwoFactorEnabled() != null ? user.getTwoFactorEnabled() : false);
                         securityData.put("googleAuthEnabled",
                                         user.getGoogleAuthEnabled() != null ? user.getGoogleAuthEnabled() : false);
-                        securityData.put("smsEnabled", user.getSmsEnabled() != null ? user.getSmsEnabled() : false);
                         securityData.put("emailEnabled",
                                         user.getEmailEnabled() != null ? user.getEmailEnabled() : false);
                         securityData.put("backupCodesEnabled",

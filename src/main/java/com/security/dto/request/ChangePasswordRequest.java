@@ -2,14 +2,17 @@ package com.security.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import com.security.validation.SecurePassword;
 
 public class ChangePasswordRequest {
 
     @NotBlank(message = "Contraseña actual es requerida")
+    @Size(max = 255, message = "Current password too long")
     private String currentPassword;
 
     @NotBlank(message = "Nueva contraseña es requerida")
-    @Size(min = 8, message = "La contraseña debe tener al menos 8 caracteres")
+    @Size(min = 8, max = 255, message = "La contraseña debe tener entre 8 y 255 caracteres")
+    @SecurePassword
     private String newPassword;
 
     // Constructors

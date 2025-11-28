@@ -74,9 +74,6 @@ public class User {
     @Column(name = "google_auth_enabled")
     private Boolean googleAuthEnabled = false;
 
-    @Column(name = "sms_enabled")
-    private Boolean smsEnabled = false;
-
     @Column(name = "email_enabled")
     private Boolean emailEnabled = false;
 
@@ -100,9 +97,6 @@ public class User {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<PasswordResetToken> passwordResetTokens = new HashSet<>();
-
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<SmsVerificationCode> smsVerificationCodes = new HashSet<>();
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<ActiveSession> activeSessions = new HashSet<>();
@@ -170,14 +164,6 @@ public class User {
 
     public void setGoogleAuthEnabled(Boolean googleAuthEnabled) {
         this.googleAuthEnabled = googleAuthEnabled;
-    }
-
-    public Boolean getSmsEnabled() {
-        return smsEnabled;
-    }
-
-    public void setSmsEnabled(Boolean smsEnabled) {
-        this.smsEnabled = smsEnabled;
     }
 
     public Boolean getEmailEnabled() {
@@ -282,6 +268,10 @@ public class User {
         this.enabled = enabled;
     }
 
+    public boolean isEnabled() {
+        return enabled != null && enabled;
+    }
+
     public Boolean getTwoFactorEnabled() {
         return twoFactorEnabled;
     }
@@ -360,14 +350,6 @@ public class User {
 
     public void setPasswordResetTokens(Set<PasswordResetToken> passwordResetTokens) {
         this.passwordResetTokens = passwordResetTokens;
-    }
-
-    public Set<SmsVerificationCode> getSmsVerificationCodes() {
-        return smsVerificationCodes;
-    }
-
-    public void setSmsVerificationCodes(Set<SmsVerificationCode> smsVerificationCodes) {
-        this.smsVerificationCodes = smsVerificationCodes;
     }
 
     public Set<ActiveSession> getActiveSessions() {

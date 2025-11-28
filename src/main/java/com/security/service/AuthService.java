@@ -159,7 +159,6 @@ public class AuthService {
         userResponse.setRoles(roleNames);
 
         userResponse.setGoogleAuthEnabled(user.getGoogleAuthEnabled());
-        userResponse.setSmsEnabled(user.getSmsEnabled());
         userResponse.setEmailEnabled(user.getEmailEnabled());
 
         return userResponse;

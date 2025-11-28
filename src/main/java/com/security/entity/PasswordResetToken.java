@@ -29,6 +29,18 @@ public class PasswordResetToken {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "used_at")
+    private LocalDateTime usedAt;
+
+    @Column(name = "attempts", nullable = false)
+    private int attempts = 0;
+
+    @Column(name = "ip_address", length = 45)
+    private String ipAddress;
+
+    @Column(name = "user_agent", length = 500)
+    private String userAgent;
+
     // Constructors
     public PasswordResetToken() {
         this.createdAt = LocalDateTime.now();
@@ -39,6 +51,7 @@ public class PasswordResetToken {
         this.token = token;
         this.user = user;
         this.expiryDate = expiryDate;
+        this.attempts = 0;
     }
 
     // Constructor con parámetros (NECESARIO)
@@ -47,6 +60,19 @@ public class PasswordResetToken {
         this.user = user;
         this.createdAt = LocalDateTime.now();
         this.expiryDate = LocalDateTime.now().plusHours(24); // Token válido por 24 horas
+        this.attempts = 0;
+    }
+
+    // Constructor completo para auditoría
+    public PasswordResetToken(String token, User user, LocalDateTime expiryDate, String ipAddress, String userAgent) {
+        this.token = token;
+        this.user = user;
+        this.expiryDate = expiryDate;
+        this.createdAt = LocalDateTime.now();
+        this.ipAddress = ipAddress;
+        this.userAgent = userAgent;
+        this.used = false;
+        this.attempts = 0;
     }
 
     // Getters and Setters
@@ -98,6 +124,38 @@ public class PasswordResetToken {
         this.createdAt = createdAt;
     }
 
+    public LocalDateTime getUsedAt() {
+        return usedAt;
+    }
+
+    public void setUsedAt(LocalDateTime usedAt) {
+        this.usedAt = usedAt;
+    }
+
+    public int getAttempts() {
+        return attempts;
+    }
+
+    public void setAttempts(int attempts) {
+        this.attempts = attempts;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
+    }
+
+    public void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
+    }
+
     // Helper methods
     public boolean isExpired() {
         return LocalDateTime.now().isAfter(expiryDate);
@@ -105,5 +163,27 @@ public class PasswordResetToken {
 
     public boolean isValid() {
         return !used && !isExpired();
+    }
+
+    /**
+     * Marca el token como usado
+     */
+    public void markAsUsed() {
+        this.used = true;
+        this.usedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Incrementa el número de intentos
+     */
+    public void incrementAttempts() {
+        this.attempts++;
+    }
+
+    /**
+     * Verifica si se han excedido los intentos máximos
+     */
+    public boolean hasExceededMaxAttempts(int maxAttempts) {
+        return this.attempts >= maxAttempts;
     }
 }

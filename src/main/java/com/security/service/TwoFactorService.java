@@ -31,12 +31,9 @@ public class TwoFactorService {
     private EmailService emailService;
 
     @Autowired
-    private SmsService smsService;
-
-    @Autowired
     private BackupCodeService backupCodeService;
 
-    // Cache temporal para códigos de email/SMS (en producción usar Redis)
+    // Cache temporal para códigos de email (en producción usar Redis)
     private final Map<Long, String> emailCodes = new HashMap<>();
     private final Map<Long, LocalDateTime> emailCodeExpiry = new HashMap<>();
 
@@ -277,73 +274,7 @@ public class TwoFactorService {
         return isValid;
     }
 
-    // ===== SMS 2FA =====
-
-    public void enableSmsTwoFactor(Long userId, String phoneNumber) {
-        User user = userService.getUserById(userId);
-
-        // CORRECCIÓN: Solo verificar si SMS ya está activo, no otros métodos
-        if (user.getSmsEnabled() != null && user.getSmsEnabled()) {
-            throw new RuntimeException("SMS two-factor authentication is already enabled");
-        }
-
-        // Validar formato del número
-        if (!smsService.isValidPhoneNumber(phoneNumber)) {
-            throw new RuntimeException("Invalid phone number format. Use format: +1234567890");
-        }
-
-        // Normalizar y guardar el número de teléfono
-        String normalizedPhone = smsService.normalizePhoneNumber(phoneNumber);
-        user.setPhone(normalizedPhone);
-        user.setTwoFactorType(TwoFactorType.SMS);
-        userService.save(user);
-
-        // Enviar código de verificación inicial
-        smsService.sendVerificationCode(user, normalizedPhone);
-    }
-
-    public boolean confirmSmsTwoFactor(Long userId, String code) {
-        User user = userService.getUserById(userId);
-
-        if (user.getPhone() == null || user.getPhone().trim().isEmpty()) {
-            throw new RuntimeException("No phone number configured for SMS 2FA");
-        }
-
-        boolean isValid = smsService.verifyCode(user, user.getPhone(), code);
-
-        if (isValid) {
-            // Habilitar 2FA después de verificación exitosa
-            user.setTwoFactorEnabled(true);
-            user.setSmsEnabled(true);
-            userService.save(user);
-            return true;
-        }
-
-        return false;
-    }
-
-    public void sendSmsCode(Long userId) {
-        User user = userService.getUserById(userId);
-
-        if (user.getSmsEnabled() == null || !user.getSmsEnabled() || user.getPhone() == null) {
-            throw new RuntimeException("SMS 2FA is not enabled for this user");
-        }
-
-        // Enviar código al número guardado del usuario
-        smsService.sendLoginVerificationCode(user);
-    }
-
-    public boolean verifySmsCode(Long userId, String code) {
-        User user = userService.getUserById(userId);
-
-        if (user.getSmsEnabled() == null || !user.getSmsEnabled()) {
-            return false;
-        }
-
-        return smsService.verifyLoginCode(user, code);
-    }
-
-    // ===== VERIFICATION METHODS =====
+    // ===== EMAIL 2FA =====
 
     public boolean verifyToken(Long userId, String token) {
         User user = userService.getUserById(userId);
@@ -361,8 +292,6 @@ public class TwoFactorService {
                 return totpService.verifyCode(user.getGoogleAuthSecret(), token);
             case EMAIL:
                 return verifyEmailCode(userId, token);
-            case SMS:
-                return verifySmsCode(userId, token);
             default:
                 return false;
         }
@@ -373,7 +302,6 @@ public class TwoFactorService {
         user.setTwoFactorEnabled(false);
         user.setGoogleAuthSecret(null);
         user.setGoogleAuthEnabled(false);
-        user.setSmsEnabled(false);
         user.setEmailEnabled(false);
         user.setTwoFactorType(null);
         userService.save(user);
@@ -381,9 +309,6 @@ public class TwoFactorService {
         // Cleanup any pending codes
         emailCodes.remove(userId);
         emailCodeExpiry.remove(userId);
-
-        // Cleanup SMS codes
-        smsService.cleanupExpiredCodes();
     }
 
     // ===== MÉTODOS LEGACY (para compatibilidad) =====
@@ -467,12 +392,6 @@ public class TwoFactorService {
                     wasDisabled = true;
                 }
                 break;
-            case "SMS":
-                if (user.getSmsEnabled() != null && user.getSmsEnabled()) {
-                    user.setSmsEnabled(false);
-                    wasDisabled = true;
-                }
-                break;
             case "EMAIL":
                 if (user.getEmailEnabled() != null && user.getEmailEnabled()) {
                     user.setEmailEnabled(false);
@@ -504,7 +423,6 @@ public class TwoFactorService {
      */
     private boolean hasAnyTwoFactorEnabled(User user) {
         return (user.getGoogleAuthEnabled() != null && user.getGoogleAuthEnabled()) ||
-                (user.getSmsEnabled() != null && user.getSmsEnabled()) ||
                 (user.getEmailEnabled() != null && user.getEmailEnabled());
     }
 
@@ -516,7 +434,6 @@ public class TwoFactorService {
         Map<String, Boolean> methods = new HashMap<>();
 
         methods.put("GOOGLE_AUTHENTICATOR", user.getGoogleAuthEnabled() != null && user.getGoogleAuthEnabled());
-        methods.put("SMS", user.getSmsEnabled() != null && user.getSmsEnabled());
         methods.put("EMAIL", user.getEmailEnabled() != null && user.getEmailEnabled());
         methods.put("BACKUP_CODES", user.getBackupCodesEnabled() != null && user.getBackupCodesEnabled());
 

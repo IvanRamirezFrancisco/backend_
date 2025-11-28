@@ -16,7 +16,6 @@ public class UserResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Boolean googleAuthEnabled;
-    private Boolean smsEnabled;
     private Boolean emailEnabled;
     private Boolean backupCodesEnabled;
 
@@ -27,14 +26,6 @@ public class UserResponse {
 
     public void setGoogleAuthEnabled(Boolean googleAuthEnabled) {
         this.googleAuthEnabled = googleAuthEnabled;
-    }
-
-    public Boolean getSmsEnabled() {
-        return smsEnabled;
-    }
-
-    public void setSmsEnabled(Boolean smsEnabled) {
-        this.smsEnabled = smsEnabled;
     }
 
     public Boolean getEmailEnabled() {

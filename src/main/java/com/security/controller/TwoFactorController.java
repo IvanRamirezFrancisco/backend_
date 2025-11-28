@@ -1,7 +1,6 @@
 package com.security.controller;
 
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import com.security.dto.response.ApiResponse;
 import com.security.dto.response.JwtAuthResponse;
@@ -17,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -63,6 +61,34 @@ public class TwoFactorController {
             twoFactorService.disableSpecificTwoFactor(userPrincipal.getId(), "GOOGLE_AUTHENTICATOR");
             return ResponseEntity.ok(new ApiResponse(true,
                     "Google Authenticator desactivado exitosamente"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse(false, e.getMessage()));
+        }
+    }
+
+    // ===== EMAIL 2FA =====
+
+    @PostMapping("/email/enable")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> enableEmail2FA(@CurrentUser UserPrincipal userPrincipal) {
+        try {
+            twoFactorService.enableEmailTwoFactor(userPrincipal.getId());
+            return ResponseEntity.ok(new ApiResponse(true,
+                    "Verificación por Email activada exitosamente"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse(false, e.getMessage()));
+        }
+    }
+
+    @PostMapping("/email/disable")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> disableEmail2FA(@CurrentUser UserPrincipal userPrincipal) {
+        try {
+            twoFactorService.disableSpecificTwoFactor(userPrincipal.getId(), "EMAIL");
+            return ResponseEntity.ok(new ApiResponse(true,
+                    "Verificación por Email desactivada exitosamente"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, e.getMessage()));
@@ -158,14 +184,7 @@ public class TwoFactorController {
 
             User user = userOptional.get();
 
-            if ("SMS".equals(method)) {
-                if (user.getSmsEnabled() == null || !user.getSmsEnabled()) {
-                    return ResponseEntity.badRequest()
-                            .body(new ApiResponse(false, "SMS 2FA is not enabled for this user"));
-                }
-                twoFactorService.sendSmsCode(user.getId());
-                return ResponseEntity.ok(new ApiResponse(true, "SMS code sent successfully"));
-            } else if ("EMAIL".equals(method)) {
+            if ("EMAIL".equals(method)) {
                 // AUTO-HABILITAR Email 2FA si no está habilitado durante el login
                 if (user.getEmailEnabled() == null || !user.getEmailEnabled()) {
                     System.out.println("📧 Auto-habilitando Email 2FA para login de usuario: " + user.getEmail());
@@ -177,7 +196,7 @@ public class TwoFactorController {
                 return ResponseEntity.ok(new ApiResponse(true, "Email code sent successfully"));
             } else {
                 return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Invalid method. Supported: SMS, EMAIL"));
+                        .body(new ApiResponse(false, "Invalid method. Supported: EMAIL"));
             }
 
         } catch (Exception e) {
@@ -186,7 +205,7 @@ public class TwoFactorController {
                     e.getMessage().contains("Mail server connection failed")) {
                 return ResponseEntity.status(503)
                         .body(new ApiResponse(false,
-                                "Error al enviar código 2FA por email. El servidor de correo no está disponible. Por favor, usa SMS como alternativa."));
+                                "Error al enviar código 2FA por email. El servidor de correo no está disponible."));
             }
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Error al enviar código 2FA: " + e.getMessage()));
@@ -221,16 +240,13 @@ public class TwoFactorController {
             } else if ("EMAIL".equals(method)) {
                 // CORREGIDO: Usar el método que existe en TwoFactorService
                 isValid = twoFactorService.verifyEmailCode(user.getId(), code);
-            } else if ("SMS".equals(method)) {
-                // NUEVO: Verificación por SMS
-                isValid = twoFactorService.verifySmsCode(user.getId(), code);
             } else if ("BACKUP_CODE".equals(method)) {
                 // NUEVO: Verificación por código de backup
                 isValid = twoFactorService.verifyBackupCode(user.getId(), code);
             } else {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false,
-                                "Invalid verification method. Supported: GOOGLE_AUTHENTICATOR, EMAIL, SMS, BACKUP_CODE"));
+                                "Invalid verification method. Supported: GOOGLE_AUTHENTICATOR, EMAIL, BACKUP_CODE"));
             }
 
             if (isValid) {
@@ -312,21 +328,6 @@ public class TwoFactorController {
 
     // ===== EMAIL 2FA =====
 
-    @PostMapping("/email/enable")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> enableEmailTwoFactor(@CurrentUser UserPrincipal userPrincipal) {
-        try {
-            twoFactorService.enableEmailTwoFactor(userPrincipal.getId());
-            return ResponseEntity.ok(new ApiResponse(true,
-                    "Email 2FA enabled successfully"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
-        }
-    }
-
-    // ===== EMAIL 2FA =====
-
     @PostMapping("/email/send")
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<?> sendEmailCode(@CurrentUser UserPrincipal userPrincipal) {
@@ -357,96 +358,6 @@ public class TwoFactorController {
             if (isValid) {
                 return ResponseEntity.ok(new ApiResponse(true,
                         "Email verification successful!"));
-            } else {
-                return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Invalid or expired verification code"));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
-        }
-    }
-
-    // ===== SMS 2FA =====
-
-    @PostMapping("/sms/setup/send-code")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> setupSmsAndSendCode(
-            @CurrentUser UserPrincipal userPrincipal,
-            @RequestBody Map<String, String> request) {
-        try {
-            String phoneNumber = request.get("phoneNumber");
-            if (phoneNumber == null || phoneNumber.trim().isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Phone number is required"));
-            }
-
-            twoFactorService.enableSmsTwoFactor(userPrincipal.getId(), phoneNumber);
-            return ResponseEntity.ok(new ApiResponse(true,
-                    "SMS verification code sent to " + phoneNumber));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
-        }
-    }
-
-    @PostMapping("/sms/setup/verify-code")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> confirmSmsSetup(
-            @CurrentUser UserPrincipal userPrincipal,
-            @RequestBody Map<String, String> request) {
-        try {
-            String code = request.get("code");
-            if (code == null || code.trim().isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Verification code is required"));
-            }
-
-            boolean isValid = twoFactorService.confirmSmsTwoFactor(userPrincipal.getId(), code);
-
-            if (isValid) {
-                return ResponseEntity.ok(new ApiResponse(true,
-                        "SMS Two-Factor Authentication enabled successfully!"));
-            } else {
-                return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Invalid or expired verification code"));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
-        }
-    }
-
-    @PostMapping("/sms/send")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> sendSmsCode(@CurrentUser UserPrincipal userPrincipal) {
-        try {
-            twoFactorService.sendSmsCode(userPrincipal.getId());
-            return ResponseEntity.ok(new ApiResponse(true,
-                    "SMS verification code sent to your phone"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, e.getMessage()));
-        }
-    }
-
-    @PostMapping("/sms/verify")
-    @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> verifySmsCode(
-            @CurrentUser UserPrincipal userPrincipal,
-            @RequestBody Map<String, String> request) {
-        try {
-            String code = request.get("code");
-            if (code == null || code.trim().isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false, "Verification code is required"));
-            }
-
-            boolean isValid = twoFactorService.verifySmsCode(userPrincipal.getId(), code);
-
-            if (isValid) {
-                return ResponseEntity.ok(new ApiResponse(true,
-                        "SMS verification successful!"));
             } else {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Invalid or expired verification code"));
@@ -529,13 +440,13 @@ public class TwoFactorController {
             Map<String, Boolean> methods = twoFactorService.getAvailableTwoFactorMethods(userPrincipal.getId());
 
             Map<String, Object> summary = new HashMap<>();
-            
+
             // Métodos individuales con su estado
             summary.put("methods", methods);
-            
+
             // Estado general de 2FA
             summary.put("twoFactorEnabled", user.getTwoFactorEnabled() != null ? user.getTwoFactorEnabled() : false);
-            
+
             // Información adicional para el dashboard
             Map<String, String> methodInfo = new HashMap<>();
             methodInfo.put("GOOGLE_AUTHENTICATOR", "Autenticación con app móvil (Google Authenticator, Authy, etc.)");

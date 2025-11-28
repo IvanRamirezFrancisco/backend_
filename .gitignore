@@ -14,14 +14,17 @@ target/
 !**/src/test/**/target/
 
 # ===== ARCHIVOS DE CONFIGURACIÓN SENSIBLES =====
-# IMPORTANTE: application.yml se incluye en el repo para Railway
+# IMPORTANTE: application.yml y application-prod.yml se incluyen en el repo
 # pero asegúrate de usar variables de entorno para datos sensibles
 
 # Archivos de configuración local (si los creas)
 application-local.yml
-application-dev.yml
-application-prod.yml
 application-secret.yml
+
+# Archivos .env con credenciales reales
+.env
+.env.local
+.env.production
 
 # Archivos de propiedades con credenciales
 *.properties
