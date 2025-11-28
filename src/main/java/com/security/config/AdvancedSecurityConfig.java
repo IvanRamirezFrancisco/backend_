@@ -16,14 +16,15 @@ import jakarta.servlet.http.HttpServletResponse;
 /**
  * Configuración avanzada de seguridad con cabeceras HTTP, HTTPS y protección
  * CSRF
- * Solo se activa en perfiles de producción (NO en local ni dev)
+ * DESHABILITADO TEMPORALMENTE - Railway maneja SSL automáticamente
+ * Para reactivar, cambiar el profile a @Profile("production-manual")
  */
 @Configuration
 @EnableWebSecurity
-@Profile("!local & !dev")
+@Profile("production-manual-disabled")  // Deshabilitado - causa conflictos con Railway
 public class AdvancedSecurityConfig implements WebMvcConfigurer {
 
-        @Value("${app.security.https.force:true}")
+        @Value("${app.security.https.force:false}")
         private boolean forceHttps;
 
         @Value("${app.security.csp.policy:default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' https:; frame-ancestors 'none';}")
