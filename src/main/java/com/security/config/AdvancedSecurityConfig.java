@@ -21,7 +21,7 @@ import jakarta.servlet.http.HttpServletResponse;
  */
 @Configuration
 @EnableWebSecurity
-@Profile("production-manual-disabled")  // Deshabilitado - causa conflictos con Railway
+@Profile("production-manual-disabled") // Deshabilitado - causa conflictos con Railway
 public class AdvancedSecurityConfig implements WebMvcConfigurer {
 
         @Value("${app.security.https.force:false}")
