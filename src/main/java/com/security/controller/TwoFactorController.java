@@ -214,82 +214,78 @@ public class TwoFactorController {
 
     @PostMapping("/verify")
     public ResponseEntity<?> verifyTwoFactor(@RequestBody Map<String, String> request) {
-        System.out.println("🔐 === INICIO VERIFICACIÓN 2FA (PRODUCCIÓN) ===");
-        
         String email = null;
         String code = null;
         String method = null;
         
         try {
+            System.out.println("========================================");
+            System.out.println("🔐 INICIO VERIFICACIÓN 2FA");
+            System.out.println("========================================");
+            
             email = request.get("email");
             code = request.get("code");
             method = request.get("method");
 
-            System.out.println("  📧 Email: " + email);
-            System.out.println("  🔑 Método: " + method);
-            System.out.println("  🔢 Código recibido: " + (code != null ? "SÍ (" + code.length() + " chars)" : "NO"));
+            System.out.println("📧 Email: " + email);
+            System.out.println("🔑 Método: " + method);
+            System.out.println("🔢 Código: " + (code != null ? code : "NULL"));
 
             if (email == null || code == null || method == null) {
-                System.err.println("❌ Faltan parámetros requeridos");
+                System.out.println("❌ Faltan parámetros");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Email, código y método son requeridos"));
             }
 
-            // Buscar usuario por email
-            System.out.println("  🔍 Buscando usuario...");
+            // Buscar usuario
+            System.out.println("🔍 Buscando usuario...");
             Optional<User> userOptional = userService.findByEmail(email);
             if (!userOptional.isPresent()) {
-                System.err.println("❌ Usuario no encontrado: " + email);
+                System.out.println("❌ Usuario no encontrado");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Usuario no encontrado"));
             }
 
             User user = userOptional.get();
-            System.out.println("  ✅ Usuario encontrado: ID " + user.getId());
-            System.out.println("  📱 Google Auth Enabled: " + user.getGoogleAuthEnabled());
-            System.out.println("  🔐 Tiene Secret: " + (user.getGoogleAuthSecret() != null && !user.getGoogleAuthSecret().isEmpty()));
+            System.out.println("✅ Usuario ID: " + user.getId());
 
             boolean isValid = false;
 
             if ("GOOGLE_AUTHENTICATOR".equals(method)) {
-                System.out.println("  🔄 Verificando con GOOGLE_AUTHENTICATOR...");
-                // Verificar que el usuario tenga Google Auth configurado
+                System.out.println("� Verificando Google Authenticator...");
+                
                 if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
-                    System.err.println("❌ Usuario no tiene Google Auth configurado");
+                    System.out.println("❌ No tiene secret configurado");
                     return ResponseEntity.badRequest()
-                            .body(new ApiResponse(false,
-                                    "Google Authenticator no está configurado. Reconfigúralo en tu perfil."));
+                            .body(new ApiResponse(false, "Google Authenticator no está configurado"));
                 }
-                System.out.println("  🔐 Secret existe, llamando a verifyGoogleAuthenticatorForLogin...");
+                
+                System.out.println("🔐 Secret existe (length: " + user.getGoogleAuthSecret().length() + ")");
                 isValid = twoFactorService.verifyGoogleAuthenticatorForLogin(user.getId(), code);
-                System.out.println("  📊 Resultado Google Auth: " + isValid);
+                
             } else if ("EMAIL".equals(method)) {
-                System.out.println("  🔄 Verificando con EMAIL...");
+                System.out.println("� Verificando código email...");
                 isValid = twoFactorService.verifyEmailCode(user.getId(), code);
-                System.out.println("  📊 Resultado Email: " + isValid);
+                
             } else if ("BACKUP_CODE".equals(method)) {
-                System.out.println("  🔄 Verificando con BACKUP_CODE...");
+                System.out.println("� Verificando backup code...");
                 isValid = twoFactorService.verifyBackupCode(user.getId(), code);
-                System.out.println("  📊 Resultado Backup: " + isValid);
+                
             } else {
-                System.err.println("❌ Método inválido: " + method);
+                System.out.println("❌ Método inválido: " + method);
                 return ResponseEntity.badRequest()
-                        .body(new ApiResponse(false,
-                                "Método de verificación inválido. Soportados: GOOGLE_AUTHENTICATOR, EMAIL, BACKUP_CODE"));
+                        .body(new ApiResponse(false, "Método inválido"));
             }
 
-            System.out.println("  🎯 Resultado final verificación: " + (isValid ? "✅ VÁLIDO" : "❌ INVÁLIDO"));
+            System.out.println("📊 Resultado: " + (isValid ? "VÁLIDO ✅" : "INVÁLIDO ❌"));
 
             if (isValid) {
-                System.out.println("  🎫 Generando token JWT...");
-                // Crear UserPrincipal y Authentication
+                System.out.println("🎫 Generando JWT...");
                 UserPrincipal userPrincipal = UserPrincipal.create(user);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userPrincipal, null, userPrincipal.getAuthorities());
                 String token = jwtTokenProvider.generateToken(authentication);
-                System.out.println("  ✅ Token generado correctamente");
 
-                // Crear respuesta con token
                 JwtAuthResponse jwtResponse = new JwtAuthResponse();
                 jwtResponse.setAccessToken(token);
                 jwtResponse.setTokenType("Bearer");
@@ -305,26 +301,28 @@ public class TwoFactorController {
                 jwtResponse.setUser(userResponse);
                 jwtResponse.setTwoFactorRequired(false);
 
-                System.out.println("✅ === LOGIN 2FA EXITOSO === para: " + email);
-                return ResponseEntity.ok(new ApiResponse(true,
-                        "Autenticación de dos factores exitosa", jwtResponse));
+                System.out.println("✅ LOGIN 2FA EXITOSO");
+                System.out.println("========================================");
+                return ResponseEntity.ok(new ApiResponse(true, "Autenticación exitosa", jwtResponse));
             } else {
-                System.out.println("❌ Código de verificación inválido");
+                System.out.println("❌ Código inválido");
+                System.out.println("========================================");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Código de verificación inválido"));
             }
 
         } catch (Exception e) {
-            System.err.println("❌ ============ ERROR EN 2FA VERIFY ============");
-            System.err.println("❌ Email: " + email);
-            System.err.println("❌ Método: " + method);
-            System.err.println("❌ Tipo de excepción: " + e.getClass().getName());
-            System.err.println("❌ Mensaje: " + e.getMessage());
-            System.err.println("❌ Stack trace completo:");
-            e.printStackTrace();
-            System.err.println("❌ =============================================");
+            System.out.println("========================================");
+            System.out.println("❌❌❌ EXCEPCIÓN EN 2FA VERIFY ❌❌❌");
+            System.out.println("Tipo: " + e.getClass().getName());
+            System.out.println("Mensaje: " + e.getMessage());
+            System.out.println("Email: " + email);
+            System.out.println("Método: " + method);
+            e.printStackTrace(System.out);
+            System.out.println("========================================");
+            
             return ResponseEntity.status(500)
-                    .body(new ApiResponse(false, "Error interno del servidor: " + e.getClass().getSimpleName() + " - " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error: " + e.getClass().getSimpleName() + " - " + e.getMessage()));
         }
     }
     /////////////////////////////////////////////////

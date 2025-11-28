@@ -22,9 +22,45 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private CustomUserDetailsService customUserDetailsService;
 
+    // Rutas públicas que no requieren autenticación
+    private static final String[] PUBLIC_PATHS = {
+        "/api/auth/",
+        "/api/2fa/verify",
+        "/api/2fa/send-login-code",
+        "/api/test/public",
+        "/api/test/health",
+        "/actuator/"
+    };
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        
+        String path = request.getRequestURI();
+        String method = request.getMethod();
+        
+        // Skip completamente para OPTIONS (CORS preflight)
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
+        // Skip para rutas públicas
+        boolean isPublicPath = false;
+        for (String publicPath : PUBLIC_PATHS) {
+            if (path.startsWith(publicPath)) {
+                isPublicPath = true;
+                break;
+            }
+        }
+        
+        if (isPublicPath) {
+            // Para rutas públicas, continuar sin validar token
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
+        // Para rutas protegidas, intentar autenticar con JWT
         try {
             String jwt = getJwtFromRequest(request);
 
