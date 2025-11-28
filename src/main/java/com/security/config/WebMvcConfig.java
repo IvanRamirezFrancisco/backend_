@@ -35,8 +35,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOriginPatterns("*")
-                .allowedMethods("*")
+                .allowedOrigins(
+                    "http://localhost:4200",
+                    "http://localhost:4300",
+                    "https://fronlogin-production.up.railway.app"
+                )
+                .allowedOriginPatterns(
+                    "http://localhost:*",
+                    "https://*.railway.app",
+                    "https://*.up.railway.app"
+                )
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD")
                 .allowedHeaders("*")
                 .exposedHeaders("Authorization", "Content-Type")
                 .allowCredentials(true)
