@@ -10,15 +10,15 @@ spring:
     name: auth-system
 
   datasource:
-    url: jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&connectTimeout=10000&socketTimeout=30000
-    username: ${MYSQLUSER}
-    password: ${MYSQLPASSWORD}
+    url: jdbc:mysql://${MYSQLHOST:localhost}:${MYSQLPORT:3306}/${MYSQLDATABASE:railway}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&connectTimeout=30000&socketTimeout=60000
+    username: ${MYSQLUSER:root}
+    password: ${MYSQLPASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+      maximum-pool-size: 5
+      minimum-idle: 1
       idle-timeout: 300000
-      connection-timeout: 20000
+      connection-timeout: 30000
       max-lifetime: 1200000
 
   jpa:
@@ -34,8 +34,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp-relay.brevo.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: ${MAIL_USERNAME::9a5a33001@smtp-brevo.com}
+    password: ${MAIL_PASSWORD:m9srNnc8DV12O4wh}
     properties:
       mail:
         smtp:
