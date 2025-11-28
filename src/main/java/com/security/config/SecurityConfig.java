@@ -62,37 +62,26 @@ public class SecurityConfig {
     }
 
     /**
-     * Configuración CORS centralizada
+     * Configuración CORS - PERMISIVA para producción rápida
      */
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         
-        // URLs permitidas - desarrollo y producción
-        config.setAllowedOrigins(Arrays.asList(
-            "http://localhost:4200",
-            "http://localhost:4300",
-            "http://127.0.0.1:4200",
-            "https://fronlogin-production.up.railway.app"
-        ));
-        
-        // Patrones adicionales para Railway
-        config.setAllowedOriginPatterns(Arrays.asList(
-            "https://*.railway.app",
-            "https://*.up.railway.app"
-        ));
+        // PERMITIR TODOS LOS ORÍGENES con patrón (solución rápida)
+        config.setAllowedOriginPatterns(List.of("*"));
         
         // Métodos HTTP permitidos
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
+        config.setAllowedMethods(List.of("*"));
         
-        // Headers permitidos
+        // Headers permitidos - TODOS
         config.setAllowedHeaders(List.of("*"));
         
         // Headers expuestos al cliente
-        config.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        config.setExposedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Total-Count"));
         
-        // Permitir credenciales (cookies, auth headers)
+        // Permitir credenciales
         config.setAllowCredentials(true);
         
         // Cache preflight por 1 hora
