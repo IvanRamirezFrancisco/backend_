@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -20,10 +21,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -60,133 +62,111 @@ public class SecurityConfig {
     }
 
     /**
-     * Filtro CORS con MÁXIMA PRIORIDAD para ejecutarse ANTES de Spring Security
+     * Configuración CORS centralizada
      */
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    public CorsFilter corsFilter() {
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-
-        // Orígenes permitidos explícitamente (desarrollo + producción)
+        
+        // URLs permitidas - desarrollo y producción
         config.setAllowedOrigins(Arrays.asList(
-                "http://localhost:4200",
-                "http://localhost:4300",
-                "http://127.0.0.1:4200",
-                "http://127.0.0.1:4300",
-                "https://fronlogin-production.up.railway.app",
-                "https://frontendapp-production.up.railway.app"));
-
-        // También permitir patrones para producción (respaldo)
+            "http://localhost:4200",
+            "http://localhost:4300",
+            "http://127.0.0.1:4200",
+            "https://fronlogin-production.up.railway.app"
+        ));
+        
+        // Patrones adicionales para Railway
         config.setAllowedOriginPatterns(Arrays.asList(
-                "https://*.up.railway.app",
-                "https://*.railway.app",
-                "https://*.netlify.app",
-                "https://*.vercel.app"));
-
+            "https://*.railway.app",
+            "https://*.up.railway.app"
+        ));
+        
         // Métodos HTTP permitidos
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
-
-        // Headers permitidos - ser más específico
-        config.setAllowedHeaders(Arrays.asList(
-                "Authorization",
-                "Content-Type",
-                "Accept",
-                "Origin",
-                "X-Requested-With",
-                "Access-Control-Request-Method",
-                "Access-Control-Request-Headers"));
-
-        // Headers expuestos
-        config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
-
-        // Permitir credenciales
+        
+        // Headers permitidos
+        config.setAllowedHeaders(List.of("*"));
+        
+        // Headers expuestos al cliente
+        config.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        
+        // Permitir credenciales (cookies, auth headers)
         config.setAllowCredentials(true);
-
+        
         // Cache preflight por 1 hora
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-
-        return new CorsFilter(source);
+        return source;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        // Configurar CORS usando la configuración del CorsFilter bean
-        http.cors(cors -> cors.configurationSource(request -> {
-            CorsConfiguration config = new CorsConfiguration();
-            config.setAllowedOrigins(Arrays.asList(
-                    "http://localhost:4200",
-                    "http://localhost:4300",
-                    "http://127.0.0.1:4200",
-                    "http://127.0.0.1:4300",
-                    "https://fronlogin-production.up.railway.app",
-                    "https://frontendapp-production.up.railway.app"));
-            config.setAllowedOriginPatterns(Arrays.asList(
-                    "https://*.up.railway.app",
-                    "https://*.railway.app"));
-            config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
-            config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin",
-                    "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
-            config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
-            config.setAllowCredentials(true);
-            config.setMaxAge(3600L);
-            return config;
-        }))
-                .csrf(csrf -> csrf.disable())
-                .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // Configurar headers de seguridad compatibles con navegadores
-                .headers(headers -> headers
-                        .frameOptions(frameOptions -> frameOptions.sameOrigin()) // Permite iframes del mismo origen
-                        .contentTypeOptions(contentType -> {
-                        }) // Previene MIME type sniffing
-                        .httpStrictTransportSecurity(hstsConfig -> hstsConfig
-                                .maxAgeInSeconds(31536000)
-                                .includeSubDomains(false) // Más flexible para subdominios
-                                .preload(false))) // No forzar preload en navegadores
-                .authorizeHttpRequests(authz -> authz
-                        // ===== PERMITIR TODAS LAS PETICIONES OPTIONS (CORS PREFLIGHT) =====
-                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-                        
-                        // ===== ENDPOINTS PÚBLICOS =====
-                        .requestMatchers("/api/auth/register").permitAll()
-                        .requestMatchers("/api/auth/login").permitAll()
-                        .requestMatchers("/api/auth/check-username/**").permitAll()
-                        .requestMatchers("/api/auth/verify-email").permitAll()
-                        .requestMatchers("/api/auth/verify").permitAll()
-                        .requestMatchers("/api/auth/resend-verification").permitAll()
-                        .requestMatchers("/api/auth/forgot-password").permitAll()
-                        .requestMatchers("/api/auth/validate-reset-token").permitAll()
-                        .requestMatchers("/api/auth/reset-password").permitAll()
-                        .requestMatchers("/api/test/public").permitAll()
-                        .requestMatchers("/api/test/health").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/h2-console/**").permitAll()
-                        .requestMatchers("/swagger-ui/**").permitAll()
-                        .requestMatchers("/v3/api-docs/**").permitAll()
-                        .requestMatchers("/error").permitAll()
+        http
+            // Usar la configuración CORS centralizada
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            
+            // Deshabilitar CSRF para API REST
+            .csrf(csrf -> csrf.disable())
+            
+            // Deshabilitar form login y http basic (evita redirecciones 302)
+            .formLogin(form -> form.disable())
+            .httpBasic(basic -> basic.disable())
+            
+            // Manejo de excepciones - devolver 401 en lugar de redirigir
+            .exceptionHandling(exception -> exception
+                .authenticationEntryPoint(unauthorizedHandler))
+            
+            // Sin sesiones (stateless para JWT)
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            
+            // Headers de seguridad
+            .headers(headers -> headers
+                .frameOptions(frameOptions -> frameOptions.sameOrigin())
+                .contentTypeOptions(contentType -> {})
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .maxAgeInSeconds(31536000)
+                    .includeSubDomains(false)
+                    .preload(false)))
+            
+            // Autorización de endpoints
+            .authorizeHttpRequests(authz -> authz
+                // CORS preflight - SIEMPRE permitir OPTIONS
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                
+                // Endpoints públicos de autenticación
+                .requestMatchers("/api/auth/**").permitAll()
+                
+                // Endpoints 2FA para login
+                .requestMatchers("/api/2fa/verify").permitAll()
+                .requestMatchers("/api/2fa/send-login-code").permitAll()
+                
+                // Endpoints de prueba y health
+                .requestMatchers("/api/test/public").permitAll()
+                .requestMatchers("/api/test/health").permitAll()
+                .requestMatchers("/actuator/**").permitAll()
+                
+                // Otros endpoints públicos
+                .requestMatchers("/error").permitAll()
+                .requestMatchers("/h2-console/**").permitAll()
+                .requestMatchers("/swagger-ui/**").permitAll()
+                .requestMatchers("/v3/api-docs/**").permitAll()
+                
+                // Endpoints protegidos
+                .requestMatchers("/api/test/protected").authenticated()
+                .requestMatchers("/api/test/admin").hasRole("ADMIN")
+                .requestMatchers("/api/users/**").authenticated()
+                .requestMatchers("/api/2fa/**").authenticated()
+                
+                // Todo lo demás requiere autenticación
+                .anyRequest().authenticated());
 
-                        // // ===== ENDPOINTS 2FA =====
-                        .requestMatchers("/api/2fa/verify").permitAll()
-                        .requestMatchers("/api/2fa/send-login-code").permitAll()
-
-                        // ===== ENDPOINTS PROTEGIDOS =====
-                        .requestMatchers("/api/test/protected").authenticated()
-                        .requestMatchers("/api/test/admin").hasRole("ADMIN")
-                        .requestMatchers("/api/users/**").authenticated()
-                        .requestMatchers("/api/2fa/**").authenticated()
-
-                        // ===== TODO LO DEMÁS =====
-                        .anyRequest().authenticated())
-                // Deshabilitar form login y http basic para evitar redirecciones 302
-                .formLogin(form -> form.disable())
-                .httpBasic(basic -> basic.disable());
-
+        // Agregar providers y filtros
         http.authenticationProvider(authenticationProvider());
-        // Agregar CorsFilter ANTES del filtro JWT para manejar OPTIONS preflight
-        http.addFilterBefore(corsFilter(), UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
