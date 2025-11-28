@@ -5,10 +5,25 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/test")
-// @CrossOrigin(origins = "*")
 public class TestController {
+
+    /**
+     * Health check simple - respaldo para Railway
+     */
+    @GetMapping("/health")
+    public ResponseEntity<?> healthCheck() {
+        Map<String, Object> health = new HashMap<>();
+        health.put("status", "UP");
+        health.put("timestamp", LocalDateTime.now().toString());
+        health.put("service", "auth-system");
+        return ResponseEntity.ok(health);
+    }
 
     @GetMapping("/public")
     public ResponseEntity<?> publicEndpoint() {

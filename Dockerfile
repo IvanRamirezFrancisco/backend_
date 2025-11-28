@@ -37,8 +37,8 @@ ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:+UseContainerSupport"
 # Puerto de la aplicación
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+# Health check - dar más tiempo para iniciar (start-period=120s)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
 
 # Comando de inicio

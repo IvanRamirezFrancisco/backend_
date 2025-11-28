@@ -131,6 +131,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/validate-reset-token").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
                         .requestMatchers("/api/test/public").permitAll()
+                        .requestMatchers("/api/test/health").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
