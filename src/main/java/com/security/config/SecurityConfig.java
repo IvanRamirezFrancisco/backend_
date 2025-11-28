@@ -67,24 +67,34 @@ public class SecurityConfig {
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Orígenes permitidos explícitamente
+        // Orígenes permitidos explícitamente (desarrollo + producción)
         config.setAllowedOrigins(Arrays.asList(
                 "http://localhost:4200",
                 "http://localhost:4300",
                 "http://127.0.0.1:4200",
-                "http://127.0.0.1:4300"));
+                "http://127.0.0.1:4300",
+                "https://fronlogin-production.up.railway.app",
+                "https://frontendapp-production.up.railway.app"));
 
-        // También permitir patrones para producción
+        // También permitir patrones para producción (respaldo)
         config.setAllowedOriginPatterns(Arrays.asList(
                 "https://*.up.railway.app",
+                "https://*.railway.app",
                 "https://*.netlify.app",
                 "https://*.vercel.app"));
 
         // Métodos HTTP permitidos
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
 
-        // Headers permitidos
-        config.setAllowedHeaders(Arrays.asList("*"));
+        // Headers permitidos - ser más específico
+        config.setAllowedHeaders(Arrays.asList(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Origin",
+                "X-Requested-With",
+                "Access-Control-Request-Method",
+                "Access-Control-Request-Headers"));
 
         // Headers expuestos
         config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
@@ -103,10 +113,27 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        // CORS ya se maneja con CorsFilter de alta prioridad, así que aquí solo lo
-        // habilitamos
-        http.cors(cors -> {
-        })
+        // Configurar CORS usando la configuración del CorsFilter bean
+        http.cors(cors -> cors.configurationSource(request -> {
+                    CorsConfiguration config = new CorsConfiguration();
+                    config.setAllowedOrigins(Arrays.asList(
+                            "http://localhost:4200",
+                            "http://localhost:4300",
+                            "http://127.0.0.1:4200",
+                            "http://127.0.0.1:4300",
+                            "https://fronlogin-production.up.railway.app",
+                            "https://frontendapp-production.up.railway.app"));
+                    config.setAllowedOriginPatterns(Arrays.asList(
+                            "https://*.up.railway.app",
+                            "https://*.railway.app"));
+                    config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
+                    config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin", 
+                            "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
+                    config.setExposedHeaders(Arrays.asList("Authorization", "X-Total-Count", "Content-Disposition"));
+                    config.setAllowCredentials(true);
+                    config.setMaxAge(3600L);
+                    return config;
+                }))
                 .csrf(csrf -> csrf.disable())
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
