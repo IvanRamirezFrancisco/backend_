@@ -23,7 +23,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
-import java.util.Collections;
 
 @Configuration
 @EnableWebSecurity
@@ -66,17 +65,14 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         
-        // Orígenes permitidos explícitamente
-        config.setAllowedOrigins(Arrays.asList(
+        // IMPORTANTE: Usar SOLO allowedOriginPatterns cuando allowCredentials es true
+        // NO usar setAllowedOrigins con "*" porque causa error
+        config.setAllowedOriginPatterns(Arrays.asList(
             "http://localhost:4200",
             "http://localhost:4300", 
-            "http://127.0.0.1:4200",
-            "https://fronlogin-production.up.railway.app"
-        ));
-        
-        // También usar patrones para flexibilidad
-        config.setAllowedOriginPatterns(Arrays.asList(
             "http://localhost:*",
+            "http://127.0.0.1:*",
+            "https://fronlogin-production.up.railway.app",
             "https://*.railway.app",
             "https://*.up.railway.app"
         ));
@@ -85,7 +81,7 @@ public class SecurityConfig {
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"));
         
         // Headers permitidos - TODOS
-        config.setAllowedHeaders(Collections.singletonList("*"));
+        config.setAllowedHeaders(Arrays.asList("*"));
         
         // Headers expuestos al cliente
         config.setExposedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Total-Count"));

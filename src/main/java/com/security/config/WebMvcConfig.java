@@ -34,14 +34,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // IMPORTANTE: Usar SOLO allowedOriginPatterns cuando allowCredentials es true
         registry.addMapping("/**")
-                .allowedOrigins(
+                .allowedOriginPatterns(
                     "http://localhost:4200",
                     "http://localhost:4300",
-                    "https://fronlogin-production.up.railway.app"
-                )
-                .allowedOriginPatterns(
                     "http://localhost:*",
+                    "http://127.0.0.1:*",
+                    "https://fronlogin-production.up.railway.app",
                     "https://*.railway.app",
                     "https://*.up.railway.app"
                 )
