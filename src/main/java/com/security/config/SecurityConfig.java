@@ -131,9 +131,9 @@ public class SecurityConfig {
                         // Endpoints públicos de autenticación
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // Endpoints 2FA para login
-                        .requestMatchers("/api/2fa/verify").permitAll()
-                        .requestMatchers("/api/2fa/send-login-code").permitAll()
+                        // Endpoints 2FA públicos (para el proceso de login)
+                        .requestMatchers(HttpMethod.POST, "/api/2fa/verify").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/2fa/send-login-code").permitAll()
 
                         // Endpoints de prueba y health
                         .requestMatchers("/api/test/public").permitAll()
@@ -146,11 +146,13 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
 
+                        // Endpoints 2FA protegidos (setup, disable, etc - requieren estar logueado)
+                        .requestMatchers("/api/2fa/**").authenticated()
+                        
                         // Endpoints protegidos
                         .requestMatchers("/api/test/protected").authenticated()
                         .requestMatchers("/api/test/admin").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").authenticated()
-                        .requestMatchers("/api/2fa/**").authenticated()
 
                         // Todo lo demás requiere autenticación
                         .anyRequest().authenticated());
