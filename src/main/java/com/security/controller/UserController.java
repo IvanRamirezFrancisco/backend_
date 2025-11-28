@@ -19,7 +19,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "*")
+// CORS se maneja globalmente en SecurityConfig
 public class UserController {
 
         @Autowired

@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "${app.cors.allowed-origins}")
+// CORS se maneja globalmente en SecurityConfig
 public class SecureAuthController {
 
     private static final Logger logger = LoggerFactory.getLogger(SecureAuthController.class);

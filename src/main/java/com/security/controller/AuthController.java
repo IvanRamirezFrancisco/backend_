@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = { "http://localhost:4200", "https://fronlogin-production.up.railway.app" })
+// CORS se maneja globalmente en SecurityConfig
 public class AuthController {
 
     @Autowired

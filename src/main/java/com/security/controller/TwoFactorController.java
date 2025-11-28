@@ -26,7 +26,7 @@ import com.security.service.BackupCodeService;
 
 @RestController
 @RequestMapping("/api/2fa")
-@CrossOrigin(origins = "*")
+// CORS se maneja globalmente en SecurityConfig - No usar @CrossOrigin aquí
 public class TwoFactorController {
 
     @Autowired

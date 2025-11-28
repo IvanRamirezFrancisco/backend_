@@ -159,10 +159,14 @@ app:
 logging:
   level:
     root: WARN
-    com.security: INFO
-    org.springframework.security: WARN
+    com.security: DEBUG
+    com.security.controller.TwoFactorController: DEBUG
+    com.security.service.TwoFactorService: DEBUG
+    com.security.service.TotpService: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web.cors: DEBUG
     org.hibernate: WARN
-    org.springframework.web: WARN
+    org.springframework.web: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
