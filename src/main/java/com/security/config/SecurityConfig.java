@@ -121,33 +121,33 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         // X-Frame-Options: Previene clickjacking
                         .frameOptions(frameOptions -> frameOptions.deny())
-                        
+
                         // X-Content-Type-Options: Previene MIME sniffing
                         .contentTypeOptions(contentType -> contentType.disable())
-                        
+
                         // X-XSS-Protection: Protección XSS del navegador
                         .xssProtection(xss -> xss.headerValue(
-                            org.springframework.security.web.header.writers.XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK))
-                        
+                                org.springframework.security.web.header.writers.XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK))
+
                         // Content-Security-Policy: Previene XSS y injection
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
-                            "default-src 'self'; " +
-                            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-                            "style-src 'self' 'unsafe-inline'; " +
-                            "img-src 'self' data: https:; " +
-                            "font-src 'self' https:; " +
-                            "connect-src 'self' https:; " +
-                            "frame-ancestors 'none'"))
-                        
+                                "default-src 'self'; " +
+                                        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+                                        "style-src 'self' 'unsafe-inline'; " +
+                                        "img-src 'self' data: https:; " +
+                                        "font-src 'self' https:; " +
+                                        "connect-src 'self' https:; " +
+                                        "frame-ancestors 'none'"))
+
                         // HTTP Strict Transport Security: Fuerza HTTPS
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .maxAgeInSeconds(31536000) // 1 año
                                 .includeSubDomains(true)
                                 .preload(true))
-                        
+
                         // Referrer-Policy: Controla información de referencia
-                        .referrerPolicy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
-                )
+                        .referrerPolicy(
+                                org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
 
                 // Autorización de endpoints
                 .authorizeHttpRequests(authz -> authz
@@ -176,7 +176,7 @@ public class SecurityConfig {
                         // ========== ENDPOINTS PROTEGIDOS ==========
                         // Administración - Solo ADMIN/SUPER_ADMIN
                         .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
-                        
+
                         // 2FA setup/config (requiere estar logueado) - EXCLUYE los ya permitidos
                         .requestMatchers("/api/2fa/google/**").authenticated()
                         .requestMatchers("/api/2fa/email/**").authenticated()

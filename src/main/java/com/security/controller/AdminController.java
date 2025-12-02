@@ -44,18 +44,17 @@ public class AdminController {
             long usersWithMFA = userService.getUsersWithMFACount();
 
             Map<String, Object> stats = Map.of(
-                "totalUsers", totalUsers,
-                "activeUsers", activeUsers,
-                "verifiedUsers", verifiedUsers,
-                "usersWithMFA", usersWithMFA,
-                "adminUser", currentUser.getEmail()
-            );
+                    "totalUsers", totalUsers,
+                    "activeUsers", activeUsers,
+                    "verifiedUsers", verifiedUsers,
+                    "usersWithMFA", usersWithMFA,
+                    "adminUser", currentUser.getEmail());
 
             return ResponseEntity.ok(new ApiResponse(true, "Dashboard data retrieved", stats));
 
         } catch (Exception e) {
             return ResponseEntity.status(500)
-                .body(new ApiResponse(false, "Error retrieving dashboard data: " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error retrieving dashboard data: " + e.getMessage()));
         }
     }
 
@@ -70,23 +69,22 @@ public class AdminController {
         try {
             Pageable pageable = PageRequest.of(page, size);
             Page<User> usersPage = userService.getAllUsersPaginated(pageable);
-            
+
             List<UserResponse> users = usersPage.getContent().stream()
-                .map(userService::convertToUserResponse)
-                .collect(Collectors.toList());
+                    .map(userService::convertToUserResponse)
+                    .collect(Collectors.toList());
 
             Map<String, Object> response = Map.of(
-                "users", users,
-                "currentPage", usersPage.getNumber(),
-                "totalPages", usersPage.getTotalPages(),
-                "totalElements", usersPage.getTotalElements()
-            );
+                    "users", users,
+                    "currentPage", usersPage.getNumber(),
+                    "totalPages", usersPage.getTotalPages(),
+                    "totalElements", usersPage.getTotalElements());
 
             return ResponseEntity.ok(new ApiResponse(true, "Users retrieved", response));
 
         } catch (Exception e) {
             return ResponseEntity.status(500)
-                .body(new ApiResponse(false, "Error retrieving users: " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error retrieving users: " + e.getMessage()));
         }
     }
 
@@ -102,7 +100,7 @@ public class AdminController {
 
         } catch (Exception e) {
             return ResponseEntity.status(500)
-                .body(new ApiResponse(false, "Error disabling user: " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error disabling user: " + e.getMessage()));
         }
     }
 
@@ -118,7 +116,7 @@ public class AdminController {
 
         } catch (Exception e) {
             return ResponseEntity.status(500)
-                .body(new ApiResponse(false, "Error enabling user: " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error enabling user: " + e.getMessage()));
         }
     }
 
@@ -134,7 +132,7 @@ public class AdminController {
 
         } catch (Exception e) {
             return ResponseEntity.status(500)
-                .body(new ApiResponse(false, "Error retrieving security logs: " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error retrieving security logs: " + e.getMessage()));
         }
     }
 
@@ -145,12 +143,11 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> testAdminAccess(@CurrentUser UserPrincipal currentUser) {
         return ResponseEntity.ok(Map.of(
-            "message", "¡Acceso ADMIN concedido!",
-            "user", currentUser.getEmail(),
-            "roles", currentUser.getAuthorities().stream()
-                .map(authority -> authority.getAuthority())
-                .collect(Collectors.toList()),
-            "timestamp", System.currentTimeMillis()
-        ));
+                "message", "¡Acceso ADMIN concedido!",
+                "user", currentUser.getEmail(),
+                "roles", currentUser.getAuthorities().stream()
+                        .map(authority -> authority.getAuthority())
+                        .collect(Collectors.toList()),
+                "timestamp", System.currentTimeMillis()));
     }
 }

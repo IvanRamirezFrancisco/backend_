@@ -30,20 +30,20 @@ public interface ActiveSessionRepository extends JpaRepository<ActiveSession, Lo
 
     // Sesiones válidas con verificación de inactividad
     @Query("SELECT ase FROM ActiveSession ase WHERE ase.user = :user AND ase.revoked = false " +
-           "AND ase.expiresAt > :currentTime AND ase.lastActivity > :inactivityThreshold")
+            "AND ase.expiresAt > :currentTime AND ase.lastActivity > :inactivityThreshold")
     List<ActiveSession> findValidAndActiveSessionsByUser(@Param("user") User user,
             @Param("currentTime") LocalDateTime currentTime,
             @Param("inactivityThreshold") LocalDateTime inactivityThreshold);
 
     // Buscar sesiones expiradas o inactivas
     @Query("SELECT ase FROM ActiveSession ase WHERE ase.revoked = false AND " +
-           "(ase.expiresAt <= :currentTime OR ase.lastActivity <= :inactivityThreshold)")
+            "(ase.expiresAt <= :currentTime OR ase.lastActivity <= :inactivityThreshold)")
     List<ActiveSession> findExpiredOrInactiveSessions(@Param("currentTime") LocalDateTime currentTime,
             @Param("inactivityThreshold") LocalDateTime inactivityThreshold);
 
     // Buscar sesiones más antiguas de un usuario (para límite de sesiones)
     @Query("SELECT ase FROM ActiveSession ase WHERE ase.user = :user AND ase.revoked = false " +
-           "ORDER BY ase.lastActivity ASC")
+            "ORDER BY ase.lastActivity ASC")
     List<ActiveSession> findOldestSessionsByUser(@Param("user") User user);
 
     // Sesiones por IP
@@ -81,8 +81,8 @@ public interface ActiveSessionRepository extends JpaRepository<ActiveSession, Lo
 
     // Contar sesiones activas con inactividad
     @Query("SELECT COUNT(ase) FROM ActiveSession ase WHERE ase.user.id = :userId AND ase.revoked = false " +
-           "AND ase.expiresAt > :currentTime AND ase.lastActivity > :inactivityThreshold")
-    long countActiveAndNotInactiveSessionsByUserId(@Param("userId") Long userId, 
+            "AND ase.expiresAt > :currentTime AND ase.lastActivity > :inactivityThreshold")
+    long countActiveAndNotInactiveSessionsByUserId(@Param("userId") Long userId,
             @Param("currentTime") LocalDateTime currentTime,
             @Param("inactivityThreshold") LocalDateTime inactivityThreshold);
 

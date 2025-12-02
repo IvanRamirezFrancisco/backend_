@@ -178,30 +178,31 @@ public class AuthController {
             // Los backup codes quedan almacenados pero inactivos hasta que se active otro
             // método
 
-            // Si NO tiene 2FA, genera el token con manejo de sesiones y responde normalmente
+            // Si NO tiene 2FA, genera el token con manejo de sesiones y responde
+            // normalmente
             String token = jwtTokenProvider.generateTokenFromUserId(
                     user.getId(),
                     user.getEmail(),
                     user.getRoles().stream().map(role -> role.getName().name()).collect(Collectors.toSet()));
-            
+
             // Obtener información de sesiones activas para incluir en la respuesta
             long activeSessions = sessionManagementService.getActiveSessionCount(user.getEmail());
-            
+
             JwtAuthResponse jwtResponse = new JwtAuthResponse();
             jwtResponse.setAccessToken(token);
             jwtResponse.setTokenType("Bearer");
             jwtResponse.setUser(userResponse);
-            
+
             // Agregar información adicional sobre sesiones
             Map<String, Object> sessionInfo = new HashMap<>();
             sessionInfo.put("activeSessions", activeSessions);
             sessionInfo.put("maxSessions", 2); // Configurado en application.yml
             sessionInfo.put("sessionInfo", "Sesiones activas: " + activeSessions + "/2");
-            
+
             Map<String, Object> responseData = new HashMap<>();
             responseData.put("jwtResponse", jwtResponse);
             responseData.put("sessionManagement", sessionInfo);
-            
+
             return ResponseEntity.ok(new ApiResponse(true, "Inicio de sesión exitoso", responseData));
         } catch (Exception e) {
             // Traducir mensajes de error técnicos a español
@@ -400,23 +401,22 @@ public class AuthController {
     public ResponseEntity<?> logout(HttpServletRequest request) {
         try {
             String token = jwtTokenProvider.getTokenFromRequest(request);
-            
+
             if (token != null && jwtTokenProvider.validateToken(token)) {
                 String jti = jwtTokenProvider.getJtiFromJWT(token);
                 String email = jwtTokenProvider.getEmailFromJWT(token);
-                
+
                 if (jti != null) {
                     // Invalidar sesión específica
                     sessionManagementService.invalidateSession(jti);
-                    
+
                     return ResponseEntity.ok(Map.of(
-                        "message", "Sesión cerrada exitosamente",
-                        "sessionClosed", jti,
-                        "user", email
-                    ));
+                            "message", "Sesión cerrada exitosamente",
+                            "sessionClosed", jti,
+                            "user", email));
                 }
             }
-            
+
             return ResponseEntity.ok(Map.of("message", "Logout exitoso"));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -432,20 +432,19 @@ public class AuthController {
     public ResponseEntity<?> logoutFromAllDevices(HttpServletRequest request) {
         try {
             String token = jwtTokenProvider.getTokenFromRequest(request);
-            
+
             if (token != null && jwtTokenProvider.validateToken(token)) {
                 String email = jwtTokenProvider.getEmailFromJWT(token);
-                
+
                 // Cerrar todas las sesiones del usuario
                 sessionManagementService.invalidateAllUserSessions(email);
-                
+
                 return ResponseEntity.ok(Map.of(
-                    "message", "Todas las sesiones han sido cerradas",
-                    "user", email,
-                    "action", "logout-all-devices"
-                ));
+                        "message", "Todas las sesiones han sido cerradas",
+                        "user", email,
+                        "action", "logout-all-devices"));
             }
-            
+
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Token inválido"));
         } catch (Exception e) {
@@ -461,14 +460,14 @@ public class AuthController {
     public ResponseEntity<?> getActiveSessions(HttpServletRequest request) {
         try {
             String token = jwtTokenProvider.getTokenFromRequest(request);
-            
+
             if (token != null && jwtTokenProvider.validateToken(token)) {
                 String email = jwtTokenProvider.getEmailFromJWT(token);
                 String currentJti = jwtTokenProvider.getJtiFromJWT(token);
-                
+
                 var sessions = sessionManagementService.getUserActiveSessions(email);
                 long activeCount = sessionManagementService.getActiveSessionCount(email);
-                
+
                 // Crear respuesta con información de sesiones
                 Map<String, Object> response = new HashMap<>();
                 response.put("activeSessions", activeCount);
@@ -484,10 +483,10 @@ public class AuthController {
                     sessionInfo.put("isCurrent", session.getJwtTokenId().equals(currentJti));
                     return sessionInfo;
                 }).collect(java.util.stream.Collectors.toList()));
-                
+
                 return ResponseEntity.ok(new ApiResponse(true, "Sesiones obtenidas exitosamente", response));
             }
-            
+
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Token inválido"));
         } catch (Exception e) {
@@ -503,25 +502,24 @@ public class AuthController {
     public ResponseEntity<?> closeSpecificSession(@PathVariable String sessionId, HttpServletRequest request) {
         try {
             String token = jwtTokenProvider.getTokenFromRequest(request);
-            
+
             if (token != null && jwtTokenProvider.validateToken(token)) {
                 String email = jwtTokenProvider.getEmailFromJWT(token);
-                
+
                 // Verificar que la sesión pertenece al usuario actual
                 var sessionInfo = sessionManagementService.getSessionInfo(sessionId);
                 if (sessionInfo.isPresent() && sessionInfo.get().getUser().getEmail().equals(email)) {
                     sessionManagementService.invalidateSession(sessionId);
-                    
+
                     return ResponseEntity.ok(Map.of(
-                        "message", "Sesión cerrada exitosamente",
-                        "sessionId", sessionId
-                    ));
+                            "message", "Sesión cerrada exitosamente",
+                            "sessionId", sessionId));
                 } else {
                     return ResponseEntity.badRequest()
                             .body(new ApiResponse(false, "Sesión no encontrada o no autorizada"));
                 }
             }
-            
+
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Token inválido"));
         } catch (Exception e) {
@@ -532,8 +530,9 @@ public class AuthController {
 
     // Método utilitario para extraer información del dispositivo
     private String extractDeviceInfo(String userAgent) {
-        if (userAgent == null) return "Desconocido";
-        
+        if (userAgent == null)
+            return "Desconocido";
+
         if (userAgent.contains("Mobile") || userAgent.contains("Android") || userAgent.contains("iPhone")) {
             return "Móvil";
         } else if (userAgent.contains("Tablet") || userAgent.contains("iPad")) {

@@ -48,7 +48,7 @@ public class PasswordResetService {
                 // Por seguridad, no revelamos si el email existe o no
                 // Ejecutamos la misma lógica temporal pero sin enviar email
                 System.out.println("Intento de reset para email no registrado: " + email);
-                
+
                 // Simular el mismo tiempo de procesamiento
                 Thread.sleep(100 + secureRandom.nextInt(200)); // 100-300ms aleatorio
                 return; // Salir silenciosamente

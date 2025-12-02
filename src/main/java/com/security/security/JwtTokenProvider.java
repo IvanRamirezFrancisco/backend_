@@ -45,10 +45,9 @@ public class JwtTokenProvider {
 
         // Crear sesión y obtener JTI
         String jti = sessionManagementService.createSession(
-            userPrincipal.getEmail(),
-            expiryDate.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime(),
-            request
-        );
+                userPrincipal.getEmail(),
+                expiryDate.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime(),
+                request);
 
         return Jwts.builder()
                 .setSubject(Long.toString(userPrincipal.getId()))
@@ -133,7 +132,7 @@ public class JwtTokenProvider {
                     .getBody();
 
             String jti = claims.getId();
-            
+
             // Si tiene JTI, verificar que la sesión esté activa
             if (jti != null && !sessionManagementService.isSessionValid(jti)) {
                 System.err.println("Sesión invalidada o expirada: " + jti);

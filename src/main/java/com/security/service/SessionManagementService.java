@@ -54,29 +54,29 @@ public class SessionManagementService {
         // Verificar límite de sesiones concurrentes
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime inactivityThreshold = now.minusMinutes(inactivityTimeoutMinutes);
-        
+
         List<ActiveSession> existingSessions = sessionRepository.findValidAndActiveSessionsByUser(
-            user, now, inactivityThreshold);
-        
-        System.out.println("🔍 Usuario " + userEmail + " tiene " + existingSessions.size() + 
-                          " sesiones válidas (límite: " + maxConcurrentSessions + ")");
+                user, now, inactivityThreshold);
+
+        System.out.println("🔍 Usuario " + userEmail + " tiene " + existingSessions.size() +
+                " sesiones válidas (límite: " + maxConcurrentSessions + ")");
 
         // Si excede el límite, invalidar las sesiones más antiguas
         if (existingSessions.size() >= maxConcurrentSessions) {
             List<ActiveSession> oldestSessions = sessionRepository.findOldestSessionsByUser(user);
-            
+
             int sessionsToInvalidate = (existingSessions.size() - maxConcurrentSessions) + 1;
             System.out.println("🔒 Invalidando " + sessionsToInvalidate + " sesiones más antiguas");
-            
+
             for (int i = 0; i < sessionsToInvalidate && i < oldestSessions.size(); i++) {
                 ActiveSession oldSession = oldestSessions.get(i);
-                
+
                 if (!oldSession.getRevoked()) {
                     // Revocar la sesión en la base de datos
                     sessionRepository.revokeSession(oldSession.getId());
-                    
-                    System.out.println("❌ Sesión " + oldSession.getJwtTokenId() + 
-                                     " invalidada por límite de sesiones para " + userEmail);
+
+                    System.out.println("❌ Sesión " + oldSession.getJwtTokenId() +
+                            " invalidada por límite de sesiones para " + userEmail);
                 }
             }
         }
@@ -85,25 +85,26 @@ public class SessionManagementService {
         ActiveSession newSession = new ActiveSession(user, jti, ipAddress, userAgent, tokenExpiry);
         sessionRepository.save(newSession);
 
-        System.out.println("✅ Nueva sesión creada: " + jti + " para " + userEmail + 
-                          " (Dispositivo: " + extractDeviceInfo(userAgent) + ")");
+        System.out.println("✅ Nueva sesión creada: " + jti + " para " + userEmail +
+                " (Dispositivo: " + extractDeviceInfo(userAgent) + ")");
 
         return jti;
     }
 
     /**
-     * REQUISITO 1: Valida si una sesión está activa y no ha expirado por inactividad
+     * REQUISITO 1: Valida si una sesión está activa y no ha expirado por
+     * inactividad
      */
     public boolean isSessionValid(String jti) {
         Optional<ActiveSession> sessionOpt = sessionRepository.findByJwtTokenId(jti);
-        
+
         if (sessionOpt.isEmpty()) {
             System.out.println("❌ Sesión no encontrada: " + jti);
             return false;
         }
 
         ActiveSession session = sessionOpt.get();
-        
+
         if (session.getRevoked()) {
             System.out.println("❌ Sesión revocada: " + jti);
             return false;
@@ -113,7 +114,7 @@ public class SessionManagementService {
         if (session.isInactive(inactivityTimeoutMinutes)) {
             // Sesión expirada por inactividad
             sessionRepository.revokeSession(session.getId());
-            
+
             System.out.println("⏰ Sesión " + jti + " expirada por inactividad (>" + inactivityTimeoutMinutes + " min)");
             return false;
         }
@@ -121,7 +122,7 @@ public class SessionManagementService {
         // Verificar expiración normal del token
         if (session.isExpired()) {
             sessionRepository.revokeSession(session.getId());
-            
+
             System.out.println("⏰ Sesión " + jti + " expirada normalmente");
             return false;
         }
@@ -136,7 +137,8 @@ public class SessionManagementService {
         LocalDateTime now = LocalDateTime.now();
         sessionRepository.updateLastActivity(jti, now);
         // Solo para debug en desarrollo
-        // System.out.println("🔄 Actividad actualizada para sesión: " + jti + " a " + now);
+        // System.out.println("🔄 Actividad actualizada para sesión: " + jti + " a " +
+        // now);
     }
 
     /**
@@ -144,23 +146,25 @@ public class SessionManagementService {
      */
     public void invalidateSession(String jti) {
         sessionRepository.revokeByTokenId(jti);
-        
+
         System.out.println("🚪 Sesión " + jti + " cerrada manualmente");
     }
 
     /**
-     * REQUISITO 2: Cierra todas las sesiones de un usuario (logout from all devices)
+     * REQUISITO 2: Cierra todas las sesiones de un usuario (logout from all
+     * devices)
      */
     public void invalidateAllUserSessions(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + userEmail));
-                
+
         List<ActiveSession> userSessions = sessionRepository.findValidSessionsByUser(user, LocalDateTime.now());
-        
+
         // Revocar todas en la base de datos
         sessionRepository.revokeAllUserSessions(user);
-        
-        System.out.println("🔒 Todas las sesiones cerradas para " + userEmail + " (" + userSessions.size() + " sesiones)");
+
+        System.out.println(
+                "🔒 Todas las sesiones cerradas para " + userEmail + " (" + userSessions.size() + " sesiones)");
     }
 
     /**
@@ -169,10 +173,10 @@ public class SessionManagementService {
     public List<ActiveSession> getUserActiveSessions(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + userEmail));
-                
+
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime inactivityThreshold = now.minusMinutes(inactivityTimeoutMinutes);
-        
+
         return sessionRepository.findValidAndActiveSessionsByUser(user, now, inactivityThreshold);
     }
 
@@ -182,12 +186,12 @@ public class SessionManagementService {
     public long getActiveSessionCount(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + userEmail));
-                
+
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime inactivityThreshold = now.minusMinutes(inactivityTimeoutMinutes);
-        
+
         return sessionRepository.countActiveAndNotInactiveSessionsByUserId(
-            user.getId(), now, inactivityThreshold);
+                user.getId(), now, inactivityThreshold);
     }
 
     /**
@@ -198,13 +202,13 @@ public class SessionManagementService {
     public void cleanupExpiredSessions() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime inactivityThreshold = now.minusMinutes(inactivityTimeoutMinutes);
-        
+
         List<ActiveSession> expiredSessions = sessionRepository.findExpiredOrInactiveSessions(now, inactivityThreshold);
-        
+
         for (ActiveSession session : expiredSessions) {
             sessionRepository.revokeSession(session.getId());
         }
-        
+
         if (!expiredSessions.isEmpty()) {
             System.out.println("🧹 Limpieza automática: " + expiredSessions.size() + " sesiones expiradas eliminadas");
         }
@@ -232,8 +236,9 @@ public class SessionManagementService {
     }
 
     private String extractDeviceInfo(String userAgent) {
-        if (userAgent == null) return "Desconocido";
-        
+        if (userAgent == null)
+            return "Desconocido";
+
         if (userAgent.contains("Mobile") || userAgent.contains("Android") || userAgent.contains("iPhone")) {
             return "Móvil";
         } else if (userAgent.contains("Tablet") || userAgent.contains("iPad")) {
