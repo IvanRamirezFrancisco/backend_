@@ -23,18 +23,14 @@ public class PasswordResetController {
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@RequestParam String email) {
         try {
-            boolean success = passwordResetService.requestPasswordReset(email);
+            // Siempre ejecuta la lógica pero no revela si existe
+            passwordResetService.requestPasswordReset(email);
 
-            if (success) {
-                return ResponseEntity.ok(Map.of(
-                        "success", true,
-                        "message",
-                        "Si el email está registrado, recibirás un enlace de recuperación en tu bandeja de entrada."));
-            } else {
-                return ResponseEntity.ok(Map.of(
-                        "success", false,
-                        "message", "No se encontró una cuenta asociada a ese email. Verifica e intenta nuevamente."));
-            }
+            // Mensaje genérico independiente del resultado
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message",
+                    "Si el email está registrado, recibirás un enlace de recuperación en tu bandeja de entrada."));
 
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(

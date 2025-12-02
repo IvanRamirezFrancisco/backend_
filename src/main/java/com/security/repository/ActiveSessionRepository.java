@@ -28,6 +28,24 @@ public interface ActiveSessionRepository extends JpaRepository<ActiveSession, Lo
     List<ActiveSession> findValidSessionsByUser(@Param("user") User user,
             @Param("currentTime") LocalDateTime currentTime);
 
+    // Sesiones válidas con verificación de inactividad
+    @Query("SELECT ase FROM ActiveSession ase WHERE ase.user = :user AND ase.revoked = false " +
+           "AND ase.expiresAt > :currentTime AND ase.lastActivity > :inactivityThreshold")
+    List<ActiveSession> findValidAndActiveSessionsByUser(@Param("user") User user,
+            @Param("currentTime") LocalDateTime currentTime,
+            @Param("inactivityThreshold") LocalDateTime inactivityThreshold);
+
+    // Buscar sesiones expiradas o inactivas
+    @Query("SELECT ase FROM ActiveSession ase WHERE ase.revoked = false AND " +
+           "(ase.expiresAt <= :currentTime OR ase.lastActivity <= :inactivityThreshold)")
+    List<ActiveSession> findExpiredOrInactiveSessions(@Param("currentTime") LocalDateTime currentTime,
+            @Param("inactivityThreshold") LocalDateTime inactivityThreshold);
+
+    // Buscar sesiones más antiguas de un usuario (para límite de sesiones)
+    @Query("SELECT ase FROM ActiveSession ase WHERE ase.user = :user AND ase.revoked = false " +
+           "ORDER BY ase.lastActivity ASC")
+    List<ActiveSession> findOldestSessionsByUser(@Param("user") User user);
+
     // Sesiones por IP
     List<ActiveSession> findByIpAddress(String ipAddress);
 
@@ -41,6 +59,16 @@ public interface ActiveSessionRepository extends JpaRepository<ActiveSession, Lo
     @Query("UPDATE ActiveSession ase SET ase.revoked = true WHERE ase.user = :user")
     void revokeAllUserSessions(@Param("user") User user);
 
+    // Actualizar última actividad
+    @Modifying
+    @Query("UPDATE ActiveSession ase SET ase.lastActivity = :currentTime WHERE ase.jwtTokenId = :tokenId AND ase.revoked = false")
+    void updateLastActivity(@Param("tokenId") String tokenId, @Param("currentTime") LocalDateTime currentTime);
+
+    // Revocar por token ID
+    @Modifying
+    @Query("UPDATE ActiveSession ase SET ase.revoked = true WHERE ase.jwtTokenId = :tokenId")
+    void revokeByTokenId(@Param("tokenId") String tokenId);
+
     // Eliminar sesiones expiradas
     @Modifying
     @Query("DELETE FROM ActiveSession ase WHERE ase.expiresAt < :currentTime")
@@ -51,9 +79,12 @@ public interface ActiveSessionRepository extends JpaRepository<ActiveSession, Lo
     @Query("DELETE FROM ActiveSession ase WHERE ase.revoked = true AND ase.createdAt < :cutoffDate")
     void deleteOldRevokedSessions(@Param("cutoffDate") LocalDateTime cutoffDate);
 
-    // Contar sesiones activas
-    @Query("SELECT COUNT(ase) FROM ActiveSession ase WHERE ase.user.id = :userId AND ase.revoked = false AND ase.expiresAt > :currentTime")
-    long countActiveSessionsByUserId(@Param("userId") Long userId, @Param("currentTime") LocalDateTime currentTime);
+    // Contar sesiones activas con inactividad
+    @Query("SELECT COUNT(ase) FROM ActiveSession ase WHERE ase.user.id = :userId AND ase.revoked = false " +
+           "AND ase.expiresAt > :currentTime AND ase.lastActivity > :inactivityThreshold")
+    long countActiveAndNotInactiveSessionsByUserId(@Param("userId") Long userId, 
+            @Param("currentTime") LocalDateTime currentTime,
+            @Param("inactivityThreshold") LocalDateTime inactivityThreshold);
 
     // Verificar si el token está revocado
     @Query("SELECT CASE WHEN COUNT(ase) > 0 THEN true ELSE false END FROM ActiveSession ase WHERE ase.jwtTokenId = :tokenId AND ase.revoked = true")

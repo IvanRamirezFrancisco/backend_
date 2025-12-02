@@ -217,21 +217,21 @@ public class TwoFactorController {
         String email = null;
         String code = null;
         String method = null;
-        
+
         try {
             System.out.println("========================================");
             System.out.println("🔐 INICIO VERIFICACIÓN 2FA");
             System.out.println("========================================");
-            
+
             // Validar que el request no sea null
             if (request == null) {
                 System.out.println("❌ Request body es NULL");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Request body es requerido"));
             }
-            
+
             System.out.println("📦 Request recibido: " + request);
-            
+
             email = request.get("email");
             code = request.get("code");
             method = request.get("method");
@@ -262,24 +262,24 @@ public class TwoFactorController {
 
             if ("GOOGLE_AUTHENTICATOR".equals(method)) {
                 System.out.println("� Verificando Google Authenticator...");
-                
+
                 if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
                     System.out.println("❌ No tiene secret configurado");
                     return ResponseEntity.badRequest()
                             .body(new ApiResponse(false, "Google Authenticator no está configurado"));
                 }
-                
+
                 System.out.println("🔐 Secret existe (length: " + user.getGoogleAuthSecret().length() + ")");
                 isValid = twoFactorService.verifyGoogleAuthenticatorForLogin(user.getId(), code);
-                
+
             } else if ("EMAIL".equals(method)) {
                 System.out.println("� Verificando código email...");
                 isValid = twoFactorService.verifyEmailCode(user.getId(), code);
-                
+
             } else if ("BACKUP_CODE".equals(method)) {
                 System.out.println("� Verificando backup code...");
                 isValid = twoFactorService.verifyBackupCode(user.getId(), code);
-                
+
             } else {
                 System.out.println("❌ Método inválido: " + method);
                 return ResponseEntity.badRequest()
@@ -329,7 +329,7 @@ public class TwoFactorController {
             System.out.println("Método: " + method);
             e.printStackTrace(System.out);
             System.out.println("========================================");
-            
+
             return ResponseEntity.status(500)
                     .body(new ApiResponse(false, "Error: " + e.getClass().getSimpleName() + " - " + e.getMessage()));
         }

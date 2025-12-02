@@ -32,6 +32,9 @@ public class ActiveSession {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    @Column(name = "last_activity", nullable = false)
+    private LocalDateTime lastActivity;
+
     @Column(nullable = false)
     private Boolean revoked = false;
 
@@ -45,6 +48,7 @@ public class ActiveSession {
         this.ipAddress = ipAddress;
         this.userAgent = userAgent;
         this.expiresAt = expiresAt;
+        this.lastActivity = LocalDateTime.now(); // Inicializar última actividad
     }
 
     // Getters and Setters
@@ -104,6 +108,14 @@ public class ActiveSession {
         this.expiresAt = expiresAt;
     }
 
+    public LocalDateTime getLastActivity() {
+        return lastActivity;
+    }
+
+    public void setLastActivity(LocalDateTime lastActivity) {
+        this.lastActivity = lastActivity;
+    }
+
     public Boolean getRevoked() {
         return revoked;
     }
@@ -117,7 +129,19 @@ public class ActiveSession {
         return LocalDateTime.now().isAfter(expiresAt);
     }
 
+    public boolean isInactive(int inactivityTimeoutMinutes) {
+        return LocalDateTime.now().isAfter(lastActivity.plusMinutes(inactivityTimeoutMinutes));
+    }
+
+    public void updateLastActivity() {
+        this.lastActivity = LocalDateTime.now();
+    }
+
     public boolean isValid() {
         return !revoked && !isExpired();
+    }
+
+    public boolean isValidWithInactivity(int inactivityTimeoutMinutes) {
+        return !revoked && !isExpired() && !isInactive(inactivityTimeoutMinutes);
     }
 }

@@ -46,8 +46,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findByCreatedAtBetween(@Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);
 
-    // Contadores
+    // Contadores para administración
     long countByEnabled(boolean enabled);
 
     long countByTwoFactorEnabled(boolean twoFactorEnabled);
+
+    // Métodos específicos para contadores de administración
+    long countByEnabledTrue();
+
+    long countByTwoFactorEnabledTrue();
 }

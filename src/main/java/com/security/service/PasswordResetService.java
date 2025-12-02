@@ -38,16 +38,20 @@ public class PasswordResetService {
 
     /**
      * Solicitar reset de contraseña
+     * SIEMPRE ejecuta la lógica completa para no revelar si el email existe
      */
-    public boolean requestPasswordReset(String email) {
+    public void requestPasswordReset(String email) {
         try {
             // 1. Verificar si el usuario existe
             Optional<User> userOpt = userRepository.findByEmail(email);
             if (userOpt.isEmpty()) {
                 // Por seguridad, no revelamos si el email existe o no
-                // Pero internamente registramos que no se encontró
+                // Ejecutamos la misma lógica temporal pero sin enviar email
                 System.out.println("Intento de reset para email no registrado: " + email);
-                return false;
+                
+                // Simular el mismo tiempo de procesamiento
+                Thread.sleep(100 + secureRandom.nextInt(200)); // 100-300ms aleatorio
+                return; // Salir silenciosamente
             }
 
             User user = userOpt.get();
@@ -71,12 +75,9 @@ public class PasswordResetService {
                         "Token generado pero error enviando email para: " + email + " - " + emailError.getMessage());
             }
 
-            return true;
-
         } catch (Exception e) {
             System.err.println("Error al procesar solicitud de reset: " + e.getMessage());
-            e.printStackTrace();
-            return false;
+            // No relanzar la excepción para mantener comportamiento uniforme
         }
     }
 

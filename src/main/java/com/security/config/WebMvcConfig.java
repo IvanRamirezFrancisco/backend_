@@ -37,14 +37,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // IMPORTANTE: Usar SOLO allowedOriginPatterns cuando allowCredentials es true
         registry.addMapping("/**")
                 .allowedOriginPatterns(
-                    "http://localhost:4200",
-                    "http://localhost:4300",
-                    "http://localhost:*",
-                    "http://127.0.0.1:*",
-                    "https://fronlogin-production.up.railway.app",
-                    "https://*.railway.app",
-                    "https://*.up.railway.app"
-                )
+                        "http://localhost:4200",
+                        "http://localhost:4300",
+                        "http://localhost:*",
+                        "http://127.0.0.1:*",
+                        "https://fronlogin-production.up.railway.app",
+                        "https://*.railway.app",
+                        "https://*.up.railway.app")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD")
                 .allowedHeaders("*")
                 .exposedHeaders("Authorization", "Content-Type")

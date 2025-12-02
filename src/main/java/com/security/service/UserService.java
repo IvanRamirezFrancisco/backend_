@@ -297,4 +297,43 @@ public class UserService {
 
         return userResponse;
     }
+
+    // ===== MÉTODOS PARA ADMINISTRACIÓN =====
+
+    /**
+     * Obtener total de usuarios
+     */
+    public long getTotalUsersCount() {
+        return userRepository.count();
+    }
+
+    /**
+     * Obtener usuarios activos (habilitados)
+     */
+    public long getActiveUsersCount() {
+        return userRepository.countByEnabledTrue();
+    }
+
+    /**
+     * Obtener usuarios verificados
+     */
+    public long getVerifiedUsersCount() {
+        return userRepository.countByEnabledTrue(); // Enabled implica verificado
+    }
+
+    /**
+     * Obtener usuarios con MFA habilitado
+     */
+    public long getUsersWithMFACount() {
+        return userRepository.countByTwoFactorEnabledTrue();
+    }
+
+    /**
+     * Obtener todos los usuarios paginados
+     */
+    public Page<User> getAllUsersPaginated(Pageable pageable) {
+        return userRepository.findAll(pageable);
+    }
+
+
 }
