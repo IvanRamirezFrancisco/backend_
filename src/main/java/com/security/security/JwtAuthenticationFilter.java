@@ -1,5 +1,6 @@
 package com.security.security;
 
+import com.security.service.SessionManagementService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Autowired
     private CustomUserDetailsService customUserDetailsService;
+
+    @Autowired
+    private SessionManagementService sessionManagementService;
 
     // Rutas públicas que NO requieren validación de JWT
     private static final List<String> PUBLIC_PATHS = Arrays.asList(
@@ -63,23 +67,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = getJwtFromRequest(request);
 
             if (StringUtils.hasText(jwt)) {
+                // ✅ VALIDAR TOKEN JWT y SESIÓN EN BD
                 if (tokenProvider.validateToken(jwt)) {
-                    Long userId = tokenProvider.getUserIdFromJWT(jwt);
-                    UserDetails userDetails = customUserDetailsService.loadUserById(userId);
+                    // ✅ OBTENER JTI del token
+                    String jti = tokenProvider.getJtiFromJWT(jwt);
+                    
+                    // ✅ VALIDAR que la sesión esté activa en BD
+                    if (jti != null && sessionManagementService.isSessionValid(jti)) {
+                        // ✅ ACTUALIZAR actividad de la sesión
+                        sessionManagementService.updateSessionActivity(jti);
+                        
+                        // Proceder con autenticación normal
+                        Long userId = tokenProvider.getUserIdFromJWT(jwt);
+                        UserDetails userDetails = customUserDetailsService.loadUserById(userId);
 
-                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                            userDetails, null, userDetails.getAuthorities());
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                                userDetails, null, userDetails.getAuthorities());
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                        
+                        logger.debug("✅ Sesión válida y activa para JTI: " + jti);
+                    } else {
+                        // ✅ SESIÓN INVÁLIDA o REVOCADA: Limpiar contexto de seguridad
+                        SecurityContextHolder.clearContext();
+                        logger.warn("🔒 Sesión inválida/revocada para JTI: " + jti);
+                    }
+                } else {
+                    // Token JWT inválido
+                    SecurityContextHolder.clearContext();
+                    logger.warn("🔒 Token JWT inválido");
                 }
             }
-            // Si no hay JWT o no es válido, simplemente continuar
-            // Spring Security decidirá si permitir o denegar basándose en las reglas
+            // Si no hay JWT, simplemente continuar sin autenticación
 
         } catch (Exception ex) {
-            // Log pero no bloquear - dejar que Spring Security maneje la autorización
-            logger.error("Error procesando JWT: " + ex.getMessage());
+            // Limpiar contexto en caso de error
+            SecurityContextHolder.clearContext();
+            logger.error("❌ Error procesando JWT: " + ex.getMessage());
         }
 
         filterChain.doFilter(request, response);

@@ -83,7 +83,9 @@ app:
 
     # Configuración de sesiones
     session:
-      inactivity-timeout-minutes: 15
+      max-concurrent-sessions: 3 # Máximo 3 dispositivos simultáneos
+      inactivity-timeout-minutes: 15 # Cierre automático después de 15 min sin actividad
+      cleanup-interval-minutes: 5 # Limpiar sesiones expiradas cada 5 minutos
 
     # Recuperación de contraseña segura
     password-reset:

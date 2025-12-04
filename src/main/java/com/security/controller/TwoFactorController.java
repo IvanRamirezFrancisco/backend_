@@ -11,6 +11,7 @@ import com.security.security.CurrentUser;
 import com.security.security.UserPrincipal;
 import com.security.service.TwoFactorService;
 import com.security.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -213,7 +214,8 @@ public class TwoFactorController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<?> verifyTwoFactor(@RequestBody(required = false) Map<String, String> request) {
+    public ResponseEntity<?> verifyTwoFactor(@RequestBody(required = false) Map<String, String> request, 
+                                           HttpServletRequest httpRequest) {
         String email = null;
         String code = null;
         String method = null;
@@ -289,11 +291,13 @@ public class TwoFactorController {
             System.out.println("📊 Resultado: " + (isValid ? "VÁLIDO ✅" : "INVÁLIDO ❌"));
 
             if (isValid) {
-                System.out.println("🎫 Generando JWT...");
+                System.out.println("🎫 Generando JWT con sesión...");
                 UserPrincipal userPrincipal = UserPrincipal.create(user);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userPrincipal, null, userPrincipal.getAuthorities());
-                String token = jwtTokenProvider.generateToken(authentication);
+                
+                // ✅ USAR MÉTODO CON SESIONES: incluye HttpServletRequest para crear sesión en BD
+                String token = jwtTokenProvider.generateToken(authentication, httpRequest);
 
                 JwtAuthResponse jwtResponse = new JwtAuthResponse();
                 jwtResponse.setAccessToken(token);

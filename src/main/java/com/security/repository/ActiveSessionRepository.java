@@ -23,6 +23,14 @@ public interface ActiveSessionRepository extends JpaRepository<ActiveSession, Lo
 
     List<ActiveSession> findByUserId(Long userId);
 
+    // Sesiones activas (no revocadas y no expiradas)
+    @Query("SELECT ase FROM ActiveSession ase WHERE ase.user = :user AND ase.revoked = false AND ase.expiresAt > :currentTime ORDER BY ase.createdAt ASC")
+    List<ActiveSession> findActiveSessionsByUser(@Param("user") User user, @Param("currentTime") LocalDateTime currentTime);
+
+    default List<ActiveSession> findActiveSessionsByUser(User user) {
+        return findActiveSessionsByUser(user, LocalDateTime.now());
+    }
+
     // Sesiones válidas (no revocadas y no expiradas)
     @Query("SELECT ase FROM ActiveSession ase WHERE ase.user = :user AND ase.revoked = false AND ase.expiresAt > :currentTime")
     List<ActiveSession> findValidSessionsByUser(@Param("user") User user,

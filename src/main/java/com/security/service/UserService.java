@@ -110,23 +110,33 @@ public class UserService {
     }
 
     public boolean verifyEmailToken(String token) {
+        System.out.println("🔍 Verificando token: " + token);
+        
         Optional<VerificationToken> verificationTokenOpt = verificationTokenRepository
                 .findValidToken(token, LocalDateTime.now());
 
         if (verificationTokenOpt.isEmpty()) {
+            System.out.println("❌ Token inválido o expirado: " + token);
             throw new BadRequestException("Token de verificación inválido o expirado");
         }
 
         VerificationToken verificationToken = verificationTokenOpt.get();
         User user = verificationToken.getUser();
 
+        System.out.println("✅ Token válido encontrado para usuario: " + user.getEmail());
+        System.out.println("🔄 Estado anterior - Enabled: " + user.getEnabled());
+
         // Activar usuario
         user.setEnabled(true);
         user.setUpdatedAt(LocalDateTime.now());
-        userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        System.out.println("✅ Usuario habilitado - Nuevo estado Enabled: " + savedUser.getEnabled());
 
         // Marcar token como usado
         verificationTokenRepository.markTokenAsUsed(verificationToken.getId());
+        
+        System.out.println("✅ Verificación completada exitosamente para: " + user.getEmail());
 
         return true;
     }

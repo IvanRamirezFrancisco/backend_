@@ -140,6 +140,13 @@ public class AuthController {
                         .body(new ApiResponse(false, "Credenciales inválidas"));
             }
 
+            // ===== VERIFICAR SI LA CUENTA ESTÁ HABILITADA =====
+            if (!user.getEnabled()) {
+                System.out.println("❌ Usuario no verificado: " + email);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(new ApiResponse(false, "Cuenta no verificada. Por favor verifica tu email antes de iniciar sesión."));
+            }
+
             // ===== LOGIN EXITOSO - Limpiar intentos fallidos =====
             loginSecurityService.clearFailedAttempts(email);
             loginSecurityService.clearFailedAttempts(clientIp);
@@ -178,12 +185,15 @@ public class AuthController {
             // Los backup codes quedan almacenados pero inactivos hasta que se active otro
             // método
 
-            // Si NO tiene 2FA, genera el token con manejo de sesiones y responde
-            // normalmente
-            String token = jwtTokenProvider.generateTokenFromUserId(
-                    user.getId(),
-                    user.getEmail(),
-                    user.getRoles().stream().map(role -> role.getName().name()).collect(Collectors.toSet()));
+            // Si NO tiene 2FA, genera el token con manejo de sesiones y responde normalmente
+            // ✅ CAMBIO CRÍTICO: Usar método que maneja sesiones con límite de 3
+            com.security.security.UserPrincipal userPrincipal = com.security.security.UserPrincipal.create(user);
+            
+            org.springframework.security.authentication.UsernamePasswordAuthenticationToken authToken = 
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                    userPrincipal, null, userPrincipal.getAuthorities());
+
+            String token = jwtTokenProvider.generateToken(authToken, request);
 
             // Obtener información de sesiones activas para incluir en la respuesta
             long activeSessions = sessionManagementService.getActiveSessionCount(user.getEmail());
@@ -196,8 +206,8 @@ public class AuthController {
             // Agregar información adicional sobre sesiones
             Map<String, Object> sessionInfo = new HashMap<>();
             sessionInfo.put("activeSessions", activeSessions);
-            sessionInfo.put("maxSessions", 2); // Configurado en application.yml
-            sessionInfo.put("sessionInfo", "Sesiones activas: " + activeSessions + "/2");
+            sessionInfo.put("maxSessions", 3); // ✅ Actualizado a 3 sesiones
+            sessionInfo.put("sessionInfo", "Sesiones activas: " + activeSessions + "/3");
 
             Map<String, Object> responseData = new HashMap<>();
             responseData.put("jwtResponse", jwtResponse);

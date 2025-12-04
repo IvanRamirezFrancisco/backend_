@@ -32,15 +32,15 @@ public class SessionManagementService {
     private UserRepository userRepository;
 
     // Configuración desde application.yml
-    @Value("${app.security.session.max-concurrent-sessions:2}")
+    @Value("${app.security.session.max-concurrent-sessions:3}")
     private int maxConcurrentSessions;
 
     @Value("${app.security.session.inactivity-timeout-minutes:15}")
     private int inactivityTimeoutMinutes;
 
     /**
-     * REQUISITO 1: Crea nueva sesión y maneja límite de sesiones concurrentes
-     * REQUISITO 2: Invalida sesiones antiguas cuando excede límite
+     * REQUISITO: Crea nueva sesión con límite de 3 sesiones activas
+     * Si count >= 3: Revoca el token más antiguo
      */
     public String createSession(String userEmail, LocalDateTime tokenExpiry, HttpServletRequest request) {
         // Buscar usuario
@@ -51,33 +51,24 @@ public class SessionManagementService {
         String ipAddress = getClientIpAddress(request);
         String userAgent = request.getHeader("User-Agent");
 
-        // Verificar límite de sesiones concurrentes
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime inactivityThreshold = now.minusMinutes(inactivityTimeoutMinutes);
+        // Contar tokens activos del usuario (no revocados y no expirados)
+        List<ActiveSession> activeSessions = sessionRepository.findActiveSessionsByUser(user);
+        int activeCount = activeSessions.size();
 
-        List<ActiveSession> existingSessions = sessionRepository.findValidAndActiveSessionsByUser(
-                user, now, inactivityThreshold);
+        System.out.println("🔍 Usuario " + userEmail + " tiene " + activeCount + " sesiones activas");
 
-        System.out.println("🔍 Usuario " + userEmail + " tiene " + existingSessions.size() +
-                " sesiones válidas (límite: " + maxConcurrentSessions + ")");
+        // Si count >= 3: Encontrar y revocar el token más antiguo
+        if (activeCount >= 3) {
+            Optional<ActiveSession> oldestSession = activeSessions.stream()
+                    .min((s1, s2) -> s1.getCreatedAt().compareTo(s2.getCreatedAt()));
 
-        // Si excede el límite, invalidar las sesiones más antiguas
-        if (existingSessions.size() >= maxConcurrentSessions) {
-            List<ActiveSession> oldestSessions = sessionRepository.findOldestSessionsByUser(user);
-
-            int sessionsToInvalidate = (existingSessions.size() - maxConcurrentSessions) + 1;
-            System.out.println("🔒 Invalidando " + sessionsToInvalidate + " sesiones más antiguas");
-
-            for (int i = 0; i < sessionsToInvalidate && i < oldestSessions.size(); i++) {
-                ActiveSession oldSession = oldestSessions.get(i);
-
-                if (!oldSession.getRevoked()) {
-                    // Revocar la sesión en la base de datos
-                    sessionRepository.revokeSession(oldSession.getId());
-
-                    System.out.println("❌ Sesión " + oldSession.getJwtTokenId() +
-                            " invalidada por límite de sesiones para " + userEmail);
-                }
+            if (oldestSession.isPresent()) {
+                ActiveSession sessionToRevoke = oldestSession.get();
+                sessionRepository.revokeSession(sessionToRevoke.getId());
+                
+                System.out.println("🔒 Token más antiguo REVOCADO: " + 
+                    sessionToRevoke.getJwtTokenId().substring(0, 8) + "..." +
+                    " (creado: " + sessionToRevoke.getCreatedAt() + ")");
             }
         }
 
@@ -85,7 +76,7 @@ public class SessionManagementService {
         ActiveSession newSession = new ActiveSession(user, jti, ipAddress, userAgent, tokenExpiry);
         sessionRepository.save(newSession);
 
-        System.out.println("✅ Nueva sesión creada: " + jti + " para " + userEmail +
+        System.out.println("✅ Nueva sesión creada: " + jti.substring(0, 8) + "..." + " para " + userEmail +
                 " (Dispositivo: " + extractDeviceInfo(userAgent) + ")");
 
         return jti;
