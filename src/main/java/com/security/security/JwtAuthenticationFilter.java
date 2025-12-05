@@ -71,12 +71,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 if (tokenProvider.validateToken(jwt)) {
                     // ✅ OBTENER JTI del token
                     String jti = tokenProvider.getJtiFromJWT(jwt);
-                    
+
                     // ✅ VALIDAR que la sesión esté activa en BD
                     if (jti != null && sessionManagementService.isSessionValid(jti)) {
                         // ✅ ACTUALIZAR actividad de la sesión
                         sessionManagementService.updateSessionActivity(jti);
-                        
+
                         // Proceder con autenticación normal
                         Long userId = tokenProvider.getUserIdFromJWT(jwt);
                         UserDetails userDetails = customUserDetailsService.loadUserById(userId);
@@ -86,7 +86,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                         SecurityContextHolder.getContext().setAuthentication(authentication);
-                        
+
                         logger.debug("✅ Sesión válida y activa para JTI: " + jti);
                     } else {
                         // ✅ SESIÓN INVÁLIDA o REVOCADA: Limpiar contexto de seguridad

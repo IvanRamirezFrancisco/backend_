@@ -2,10 +2,12 @@ package com.security.controller;
 
 import com.security.service.PasswordResetService;
 import com.security.dto.request.ResetPasswordRequest;
+import com.security.exception.RateLimitExceededException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 
@@ -18,19 +20,36 @@ public class PasswordResetController {
     private PasswordResetService passwordResetService;
 
     /**
-     * Solicitar reset de contraseña
+     * Solicitar reset de contraseña con limitación de intentos (3 cada 5 minutos)
      */
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestParam String email) {
+    public ResponseEntity<?> forgotPassword(@RequestParam String email, HttpServletRequest request) {
         try {
             // Siempre ejecuta la lógica pero no revela si existe
-            passwordResetService.requestPasswordReset(email);
+            passwordResetService.requestPasswordReset(email, request);
 
             // Mensaje genérico independiente del resultado
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message",
                     "Si el email está registrado, recibirás un enlace de recuperación en tu bandeja de entrada."));
+
+        } catch (RateLimitExceededException e) {
+            // Manejo específico para rate limiting con información de tiempo
+            return ResponseEntity.status(429).body(Map.of(
+                    "success", false,
+                    "message", e.getMessage(),
+                    "remainingTimeSeconds", e.getTotalSecondsLeft(),
+                    "minutesLeft", e.getMinutesLeft(),
+                    "secondsLeft", e.getSecondsLeft(),
+                    "attemptCount", e.getAttemptCount(),
+                    "maxAttempts", e.getMaxAttempts()));
+
+        } catch (IllegalStateException e) {
+            // Manejo para otros errores de estado
+            return ResponseEntity.status(429).body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()));
 
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(

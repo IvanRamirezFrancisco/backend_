@@ -111,7 +111,7 @@ public class UserService {
 
     public boolean verifyEmailToken(String token) {
         System.out.println("🔍 Verificando token: " + token);
-        
+
         Optional<VerificationToken> verificationTokenOpt = verificationTokenRepository
                 .findValidToken(token, LocalDateTime.now());
 
@@ -135,7 +135,7 @@ public class UserService {
 
         // Marcar token como usado
         verificationTokenRepository.markTokenAsUsed(verificationToken.getId());
-        
+
         System.out.println("✅ Verificación completada exitosamente para: " + user.getEmail());
 
         return true;

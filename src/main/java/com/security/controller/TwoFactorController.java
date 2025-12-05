@@ -214,8 +214,8 @@ public class TwoFactorController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<?> verifyTwoFactor(@RequestBody(required = false) Map<String, String> request, 
-                                           HttpServletRequest httpRequest) {
+    public ResponseEntity<?> verifyTwoFactor(@RequestBody(required = false) Map<String, String> request,
+            HttpServletRequest httpRequest) {
         String email = null;
         String code = null;
         String method = null;
@@ -295,8 +295,9 @@ public class TwoFactorController {
                 UserPrincipal userPrincipal = UserPrincipal.create(user);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userPrincipal, null, userPrincipal.getAuthorities());
-                
-                // ✅ USAR MÉTODO CON SESIONES: incluye HttpServletRequest para crear sesión en BD
+
+                // ✅ USAR MÉTODO CON SESIONES: incluye HttpServletRequest para crear sesión en
+                // BD
                 String token = jwtTokenProvider.generateToken(authentication, httpRequest);
 
                 JwtAuthResponse jwtResponse = new JwtAuthResponse();

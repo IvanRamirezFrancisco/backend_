@@ -65,10 +65,10 @@ public class SessionManagementService {
             if (oldestSession.isPresent()) {
                 ActiveSession sessionToRevoke = oldestSession.get();
                 sessionRepository.revokeSession(sessionToRevoke.getId());
-                
-                System.out.println("🔒 Token más antiguo REVOCADO: " + 
-                    sessionToRevoke.getJwtTokenId().substring(0, 8) + "..." +
-                    " (creado: " + sessionToRevoke.getCreatedAt() + ")");
+
+                System.out.println("🔒 Token más antiguo REVOCADO: " +
+                        sessionToRevoke.getJwtTokenId().substring(0, 8) + "..." +
+                        " (creado: " + sessionToRevoke.getCreatedAt() + ")");
             }
         }
 

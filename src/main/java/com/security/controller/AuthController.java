@@ -144,7 +144,8 @@ public class AuthController {
             if (!user.getEnabled()) {
                 System.out.println("❌ Usuario no verificado: " + email);
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new ApiResponse(false, "Cuenta no verificada. Por favor verifica tu email antes de iniciar sesión."));
+                        .body(new ApiResponse(false,
+                                "Cuenta no verificada. Por favor verifica tu email antes de iniciar sesión."));
             }
 
             // ===== LOGIN EXITOSO - Limpiar intentos fallidos =====
@@ -185,12 +186,12 @@ public class AuthController {
             // Los backup codes quedan almacenados pero inactivos hasta que se active otro
             // método
 
-            // Si NO tiene 2FA, genera el token con manejo de sesiones y responde normalmente
+            // Si NO tiene 2FA, genera el token con manejo de sesiones y responde
+            // normalmente
             // ✅ CAMBIO CRÍTICO: Usar método que maneja sesiones con límite de 3
             com.security.security.UserPrincipal userPrincipal = com.security.security.UserPrincipal.create(user);
-            
-            org.springframework.security.authentication.UsernamePasswordAuthenticationToken authToken = 
-                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+
+            org.springframework.security.authentication.UsernamePasswordAuthenticationToken authToken = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
                     userPrincipal, null, userPrincipal.getAuthorities());
 
             String token = jwtTokenProvider.generateToken(authToken, request);
