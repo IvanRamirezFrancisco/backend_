@@ -101,7 +101,7 @@ public class AuthController {
             if (loginSecurityService.isAccountLocked(email)) {
                 long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(email);
                 long remainingSeconds = loginSecurityService.getLockoutRemainingSeconds(email);
-                
+
                 String message = String.format(
                         "Cuenta bloqueada temporalmente por múltiples intentos fallidos. " +
                                 "Intenta de nuevo en %d minutos.",
@@ -121,12 +121,12 @@ public class AuthController {
             if (loginSecurityService.isAccountLocked(clientIp)) {
                 long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(clientIp);
                 long remainingSeconds = loginSecurityService.getLockoutRemainingSeconds(clientIp);
-                
+
                 String message = String.format(
                         "Demasiados intentos desde esta IP. Intenta de nuevo en %d minutos.",
                         remainingMinutes > 0 ? remainingMinutes : 1);
 
-                // Crear respuesta con información detallada para el frontend  
+                // Crear respuesta con información detallada para el frontend
                 Map<String, Object> errorData = new HashMap<>();
                 errorData.put("message", message);
                 errorData.put("remainingTimeSeconds", remainingSeconds);
@@ -147,16 +147,16 @@ public class AuthController {
                 if (loginSecurityService.isAccountLocked(email)) {
                     long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(email);
                     long remainingSeconds = loginSecurityService.getLockoutRemainingSeconds(email);
-                    
+
                     String message = String.format("Has excedido el número máximo de intentos. " +
-                                            "Cuenta bloqueada por %d minutos.", remainingMinutes);
-                    
+                            "Cuenta bloqueada por %d minutos.", remainingMinutes);
+
                     // Crear respuesta con información detallada para el frontend
                     Map<String, Object> errorData = new HashMap<>();
                     errorData.put("message", message);
                     errorData.put("remainingTimeSeconds", remainingSeconds);
                     errorData.put("remainingTimeMinutes", remainingMinutes);
-                    
+
                     return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                             .body(errorData);
                 }
