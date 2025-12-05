@@ -250,6 +250,27 @@ public class LoginSecurityService {
     }
 
     /**
+     * Obtiene el tiempo restante de bloqueo en segundos (para cuenta regresiva)
+     */
+    public long getLockoutRemainingSeconds(String identifier) {
+        try {
+            String key = sanitize(identifier);
+            LockRecord lock = accountLocks.get(key);
+
+            if (lock == null) {
+                return 0;
+            }
+
+            long seconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), lock.lockedUntil);
+            return Math.max(0, seconds); // No devolver números negativos
+
+        } catch (Exception e) {
+            logger.error("Error getting lockout remaining seconds: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * Limpia los intentos fallidos tras un login exitoso
      */
     public void clearFailedAttempts(String identifier) {

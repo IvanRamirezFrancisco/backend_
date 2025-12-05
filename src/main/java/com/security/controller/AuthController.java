@@ -100,24 +100,40 @@ public class AuthController {
             // Verificar si la cuenta está bloqueada por intentos fallidos
             if (loginSecurityService.isAccountLocked(email)) {
                 long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(email);
+                long remainingSeconds = loginSecurityService.getLockoutRemainingSeconds(email);
+                
                 String message = String.format(
                         "Cuenta bloqueada temporalmente por múltiples intentos fallidos. " +
                                 "Intenta de nuevo en %d minutos.",
                         remainingMinutes > 0 ? remainingMinutes : 1);
 
+                // Crear respuesta con información detallada para el frontend
+                Map<String, Object> errorData = new HashMap<>();
+                errorData.put("message", message);
+                errorData.put("remainingTimeSeconds", remainingSeconds);
+                errorData.put("remainingTimeMinutes", remainingMinutes);
+
                 return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                        .body(new ApiResponse(false, message));
+                        .body(errorData);
             }
 
             // También verificar bloqueo por IP
             if (loginSecurityService.isAccountLocked(clientIp)) {
                 long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(clientIp);
+                long remainingSeconds = loginSecurityService.getLockoutRemainingSeconds(clientIp);
+                
                 String message = String.format(
                         "Demasiados intentos desde esta IP. Intenta de nuevo en %d minutos.",
                         remainingMinutes > 0 ? remainingMinutes : 1);
 
+                // Crear respuesta con información detallada para el frontend  
+                Map<String, Object> errorData = new HashMap<>();
+                errorData.put("message", message);
+                errorData.put("remainingTimeSeconds", remainingSeconds);
+                errorData.put("remainingTimeMinutes", remainingMinutes);
+
                 return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                        .body(new ApiResponse(false, message));
+                        .body(errorData);
             }
 
             // ===== AUTENTICACIÓN =====
@@ -130,10 +146,19 @@ public class AuthController {
                 // Verificar si ahora está bloqueado para dar mensaje apropiado
                 if (loginSecurityService.isAccountLocked(email)) {
                     long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(email);
+                    long remainingSeconds = loginSecurityService.getLockoutRemainingSeconds(email);
+                    
+                    String message = String.format("Has excedido el número máximo de intentos. " +
+                                            "Cuenta bloqueada por %d minutos.", remainingMinutes);
+                    
+                    // Crear respuesta con información detallada para el frontend
+                    Map<String, Object> errorData = new HashMap<>();
+                    errorData.put("message", message);
+                    errorData.put("remainingTimeSeconds", remainingSeconds);
+                    errorData.put("remainingTimeMinutes", remainingMinutes);
+                    
                     return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                            .body(new ApiResponse(false,
-                                    String.format("Has excedido el número máximo de intentos. " +
-                                            "Cuenta bloqueada por %d minutos.", remainingMinutes)));
+                            .body(errorData);
                 }
 
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)

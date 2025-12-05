@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import com.security.validation.SecurePassword;
 import com.security.validation.SafeInput;
+import com.security.validation.ValidName;
+import com.security.validation.ValidEmailDomain;
 
 public class RegisterRequest {
 
@@ -15,23 +17,23 @@ public class RegisterRequest {
 
     @NotBlank(message = "First name is required")
     @Size(max = 50, message = "First name must be less than 50 characters")
-    @SafeInput(type = SafeInput.SanitizationType.TEXT, message = "First name contains invalid characters")
+    @ValidName(message = "First name contains invalid characters or malicious content")
     private String firstName;
 
     @NotBlank(message = "Last name is required")
     @Size(max = 50, message = "Last name must be less than 50 characters")
-    @SafeInput(type = SafeInput.SanitizationType.TEXT, message = "Last name contains invalid characters")
+    @ValidName(message = "Last name contains invalid characters or malicious content")
     private String lastName;
 
     @NotBlank(message = "Email is required")
     @Email(message = "Email should be valid", regexp = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
     @Size(max = 100, message = "Email must be less than 100 characters")
-    @SafeInput(type = SafeInput.SanitizationType.EMAIL, message = "Email format is invalid")
+    @ValidEmailDomain(message = "Please use an email from a recognized provider (gmail.com, hotmail.com, outlook.com, yahoo.com)")
     private String email;
 
     @NotBlank(message = "Password is required")
     @Size(min = 8, max = 255, message = "Password must be between 8 and 255 characters")
-    @SecurePassword
+    @SecurePassword(message = "Password must be secure: avoid simple patterns like 123456, qwerty, or abc123")
     private String password;
 
     @Size(max = 20, message = "Phone must be less than 20 characters")

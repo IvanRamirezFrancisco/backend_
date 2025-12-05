@@ -113,6 +113,7 @@ public class PasswordRecoveryAttempt {
         if (blocked && isBlockExpired()) {
             this.blocked = false;
             this.blockedUntil = null;
+            this.attemptCount = 0; // CRUCIAL: Resetear contador cuando expira el bloqueo
             this.updatedAt = LocalDateTime.now();
         }
     }
