@@ -21,7 +21,7 @@ public class PasswordResetEmailService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
-    @Value("${app.frontend.url:http://localhost:4200}")
+    @Value("${app.base-url:http://localhost:4200}")
     private String frontendUrl;
 
     @Autowired
