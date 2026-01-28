@@ -58,14 +58,16 @@ public class PasswordResetService {
         String ipAddress = getClientIpAddress(request);
 
         try {
-            // 1. VERIFICAR LÍMITE DE INTENTOS ANTES DE PROCESAR
+            // 1️⃣ VERIFICAR LÍMITE DE INTENTOS ANTES DE PROCESAR
+            // Esta función ya verifica si el usuario existe y aplica rate limit correcto
             checkAttemptLimits(email, ipAddress);
 
-            // 2. Verificar si el usuario existe
+            // 2️⃣ Verificar si el usuario existe (segunda verificación para lógica de
+            // negocio)
             Optional<User> userOpt = userRepository.findByEmail(email);
             if (userOpt.isEmpty()) {
                 // Por seguridad, no revelamos si el email existe o no
-                // REGISTRAR INTENTO solo para emails no existentes (para rate limiting)
+                // REGISTRAR INTENTO para emails no existentes (rate limiting por IP)
                 recordAttempt(email, ipAddress, false);
                 System.out.println("🔍 Solicitud de reset para email no registrado: " + email);
 
@@ -74,23 +76,23 @@ public class PasswordResetService {
                 return; // Salir silenciosamente
             }
 
-            // 3. REGISTRAR EL INTENTO SOLO SI PASÓ LAS VERIFICACIONES ANTERIORES
+            // 3️⃣ REGISTRAR EL INTENTO para usuarios reales (rate limiting por email)
             recordAttempt(email, ipAddress, false);
-            System.out.println("📊 Intento registrado para: " + email + " desde IP: " + ipAddress);
+            System.out.println("📊 Intento registrado para usuario real: " + email + " desde IP: " + ipAddress);
 
             User user = userOpt.get();
 
-            // 4. Invalidar tokens anteriores del usuario
+            // 4️⃣ Invalidar tokens anteriores del usuario
             passwordResetTokenRepository.deleteAllByUser(user);
 
-            // 5. Generar nuevo token seguro
+            // 5️⃣ Generar nuevo token seguro
             String token = generateSecureToken();
 
-            // 6. Crear y guardar el token
+            // 6️⃣ Crear y guardar el token
             PasswordResetToken resetToken = new PasswordResetToken(token, user);
             passwordResetTokenRepository.save(resetToken);
 
-            // 7. Enviar email usando el servicio con Brevo API
+            // 7️⃣ Enviar email usando el servicio con Brevo API
             try {
                 emailService.sendPasswordResetEmail(user, token);
                 System.out.println("✅ Token de reset generado y email enviado para: " + email);
@@ -269,34 +271,61 @@ public class PasswordResetService {
     }
 
     /**
-     * Verificar si un usuario excede el límite de intentos de recuperación de
-     * contraseña
+     * ✅ Verificar límites de intentos de recuperación con lógica refactorizada:
+     * 
+     * CASO 1: Usuario existe en BD → Rate limit por EMAIL (persistente entre
+     * navegadores/IPs)
+     * CASO 2: Usuario NO existe → Rate limit por IP (evita revelar existencia)
+     * 
+     * Esto garantiza:
+     * - Usuarios reales: Bloqueo consistente en cualquier navegador/dispositivo
+     * - Emails falsos: Bloqueo por IP para evitar spam sin revelar si el email
+     * existe
      */
     private void checkAttemptLimits(String email, String clientIp) {
-        // 1. Verificar si existe un registro de intentos para esta combinación email-IP
+        // 1️⃣ VERIFICAR SI EL USUARIO EXISTE EN BD
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        boolean userExists = userOpt.isPresent();
+
+        if (userExists) {
+            // ✅ CASO 1: Usuario real → Rate limit por EMAIL (ignorando IP)
+            checkEmailRateLimit(email);
+        } else {
+            // ✅ CASO 2: Email inexistente → Rate limit por IP (sin revelar que no existe)
+            checkIpRateLimit(clientIp);
+        }
+    }
+
+    /**
+     * ✅ Verificar rate limit basado SOLO en EMAIL (para usuarios reales)
+     * Esto hace que el bloqueo sea persistente entre navegadores y dispositivos
+     */
+    private void checkEmailRateLimit(String email) {
+        // Buscar el registro más reciente para este email (independiente de IP)
         Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
-                .findByEmailAndIpAddress(email, clientIp);
+                .findMostRecentByEmail(email);
 
         if (existingAttempt.isPresent()) {
             PasswordRecoveryAttempt attempt = existingAttempt.get();
 
-            // 2. Primero verificar si el bloqueo ya expiró y auto-resetearlo
+            // Verificar si el bloqueo ya expiró y auto-resetearlo
             if (attempt.isBlocked() && attempt.isBlockExpired()) {
-                System.out.println("🔄 Auto-reseteando bloqueo expirado para: " + email + " desde IP: " + clientIp);
+                System.out.println("🔄 Auto-reseteando bloqueo expirado para usuario: " + email);
                 attempt.resetIfExpired();
                 passwordRecoveryAttemptRepository.save(attempt);
                 return; // Usuario desbloqueado, puede continuar
             }
 
-            // 3. Si todavía está bloqueado, calcular tiempo restante preciso
+            // Si todavía está bloqueado, rechazar con tiempo restante
             if (attempt.isCurrentlyBlocked()) {
                 LocalDateTime now = LocalDateTime.now();
                 long minutesLeft = Math.max(0, java.time.Duration.between(now, attempt.getBlockedUntil()).toMinutes());
                 long secondsLeft = Math.max(0,
                         java.time.Duration.between(now, attempt.getBlockedUntil()).toSeconds() % 60);
+                long totalSecondsLeft = java.time.Duration.between(now, attempt.getBlockedUntil()).toSeconds();
 
                 throw new RateLimitExceededException(
-                        "Has excedido el límite de " + MAX_ATTEMPTS + " intentos. " +
+                        "Has excedido el límite de " + MAX_ATTEMPTS + " intentos de recuperación. " +
                                 "Debes esperar " + Math.max(1, minutesLeft) + " minutos y " + secondsLeft
                                 + " segundos más.",
                         minutesLeft,
@@ -306,74 +335,164 @@ public class PasswordResetService {
             }
         }
 
-        // 4. Verificar límites por período de tiempo (método original como respaldo)
-        LocalDateTime blockStart = LocalDateTime.now().minusMinutes(BLOCK_DURATION_MINUTES);
-        LocalDateTime now = LocalDateTime.now();
-
-        // Verificar intentos por email en los últimos 5 minutos
-        int emailAttempts = passwordRecoveryAttemptRepository
-                .countAttemptsByEmailInPeriod(email, blockStart, now);
-
-        // Verificar intentos por IP en los últimos 5 minutos
-        int ipAttempts = passwordRecoveryAttemptRepository
-                .countAttemptsByIpInPeriod(clientIp, blockStart, now);
-
-        if (emailAttempts >= MAX_ATTEMPTS) {
-            throw new RateLimitExceededException(
-                    "Has excedido el límite de " + MAX_ATTEMPTS + " intentos de recuperación. " +
-                            "Inténtalo nuevamente en " + BLOCK_DURATION_MINUTES + " minutos.",
-                    BLOCK_DURATION_MINUTES, 0, emailAttempts, MAX_ATTEMPTS);
-        }
-
-        if (ipAttempts >= MAX_ATTEMPTS) {
-            throw new RateLimitExceededException(
-                    "Tu dirección IP ha excedido el límite de intentos. " +
-                            "Inténtalo nuevamente en " + BLOCK_DURATION_MINUTES + " minutos.",
-                    BLOCK_DURATION_MINUTES, 0, ipAttempts, MAX_ATTEMPTS);
-        }
+        // No hay bloqueo activo, permitir el intento
     }
 
     /**
-     * Registrar un intento de recuperación de contraseña
+     * ✅ Verificar rate limit basado SOLO en IP (para emails inexistentes)
+     * Esto evita spam masivo sin revelar qué emails existen en la BD
+     */
+    private void checkIpRateLimit(String clientIp) {
+        // Buscar el registro más reciente para esta IP
+        Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
+                .findMostRecentByIp(clientIp);
+
+        if (existingAttempt.isPresent()) {
+            PasswordRecoveryAttempt attempt = existingAttempt.get();
+
+            // Verificar si el bloqueo ya expiró
+            if (attempt.isBlocked() && attempt.isBlockExpired()) {
+                System.out.println("🔄 Auto-reseteando bloqueo expirado para IP: " + clientIp);
+                attempt.resetIfExpired();
+                passwordRecoveryAttemptRepository.save(attempt);
+                return;
+            }
+
+            // Si todavía está bloqueado, rechazar con tiempo restante
+            if (attempt.isCurrentlyBlocked()) {
+                LocalDateTime now = LocalDateTime.now();
+                long minutesLeft = Math.max(0, java.time.Duration.between(now, attempt.getBlockedUntil()).toMinutes());
+                long secondsLeft = Math.max(0,
+                        java.time.Duration.between(now, attempt.getBlockedUntil()).toSeconds() % 60);
+
+                throw new RateLimitExceededException(
+                        "Tu dirección IP ha excedido el límite de intentos. " +
+                                "Debes esperar " + Math.max(1, minutesLeft) + " minutos y " + secondsLeft
+                                + " segundos más.",
+                        minutesLeft,
+                        secondsLeft,
+                        attempt.getAttemptCount(),
+                        MAX_ATTEMPTS);
+            }
+        }
+
+        // No hay bloqueo activo por IP, permitir el intento
+    }
+
+    /**
+     * ✅ Registrar un intento de recuperación de contraseña
+     * 
+     * CASO 1: Usuario existe → Registrar por EMAIL (actualizar registro existente o
+     * crear nuevo)
+     * CASO 2: Usuario NO existe → Registrar por IP (para rate limiting sin revelar
+     * existencia)
      */
     private void recordAttempt(String email, String clientIp, boolean successful) {
         try {
-            // Buscar intento existente para la combinación email-IP
-            Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
-                    .findByEmailAndIpAddress(email, clientIp);
+            // 1️⃣ Verificar si el usuario existe
+            Optional<User> userOpt = userRepository.findByEmail(email);
+            boolean userExists = userOpt.isPresent();
 
-            PasswordRecoveryAttempt attempt;
-            if (existingAttempt.isPresent()) {
-                attempt = existingAttempt.get();
-                // SIEMPRE incrementar contador por cada SOLICITUD
-                // El parámetro 'successful' se ignorará aquí - solo se usa para reset completo
-                // en clearAttemptsForUser
-                attempt.incrementAttempt();
-
-                // Aplicar bloqueo progresivo si excede el límite
-                if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
-                    attempt.applyProgressiveBlock();
-                    System.out.println("🚫 Usuario bloqueado por exceder " + MAX_ATTEMPTS + " intentos: " + email
-                            + " desde IP: " + clientIp);
-                }
+            if (userExists) {
+                // ✅ CASO 1: Usuario real → Registrar/actualizar por EMAIL
+                recordAttemptByEmail(email, clientIp);
             } else {
-                // Crear nuevo registro de intento - siempre empezar en 1 para solicitudes
-                attempt = new PasswordRecoveryAttempt();
-                attempt.setEmail(email);
-                attempt.setIpAddress(clientIp);
-                attempt.setAttemptCount(1); // Cada solicitud cuenta como 1 intento
-                attempt.setLastAttempt(LocalDateTime.now());
-                attempt.setCreatedAt(LocalDateTime.now());
-                attempt.setBlocked(false);
+                // ✅ CASO 2: Email inexistente → Registrar/actualizar por IP
+                recordAttemptByIp(email, clientIp);
             }
-
-            passwordRecoveryAttemptRepository.save(attempt);
-            System.out.println("📊 Intento #" + attempt.getAttemptCount() + " registrado para: " + email + " desde IP: "
-                    + clientIp);
 
         } catch (Exception e) {
             System.err.println("Error registrando intento de recuperación: " + e.getMessage());
         }
+    }
+
+    /**
+     * ✅ Registrar intento para USUARIO REAL (por email, independiente de IP)
+     */
+    private void recordAttemptByEmail(String email, String clientIp) {
+        // Buscar el registro más reciente para este email
+        Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
+                .findMostRecentByEmail(email);
+
+        PasswordRecoveryAttempt attempt;
+        if (existingAttempt.isPresent()) {
+            attempt = existingAttempt.get();
+
+            // ✅ IMPORTANTE: Si ya está bloqueado, NO incrementar más el contador
+            // Esto evita que el bloqueo se extienda con intentos adicionales
+            if (attempt.isCurrentlyBlocked()) {
+                System.out.println("⚠️ Intento durante bloqueo activo (no incrementado) para: " + email);
+                return; // No incrementar, mantener bloqueo fijo
+            }
+
+            // Actualizar IP más reciente y timestamp
+            attempt.setIpAddress(clientIp);
+            attempt.incrementAttempt();
+
+            // Aplicar bloqueo si excede el límite
+            if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
+                attempt.applyProgressiveBlock();
+                System.out.println("🚫 Usuario bloqueado por exceder " + MAX_ATTEMPTS +
+                        " intentos: " + email + " (persistente entre IPs)");
+            }
+        } else {
+            // Crear nuevo registro para este email
+            attempt = new PasswordRecoveryAttempt();
+            attempt.setEmail(email);
+            attempt.setIpAddress(clientIp);
+            attempt.setAttemptCount(1);
+            attempt.setLastAttempt(LocalDateTime.now());
+            attempt.setCreatedAt(LocalDateTime.now());
+            attempt.setBlocked(false);
+        }
+
+        passwordRecoveryAttemptRepository.save(attempt);
+        System.out.println("📊 Intento #" + attempt.getAttemptCount() +
+                " registrado para usuario: " + email + " desde IP: " + clientIp);
+    }
+
+    /**
+     * ✅ Registrar intento para EMAIL INEXISTENTE (por IP, para rate limiting)
+     */
+    private void recordAttemptByIp(String email, String clientIp) {
+        // Buscar el registro más reciente para esta IP
+        Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
+                .findMostRecentByIp(clientIp);
+
+        PasswordRecoveryAttempt attempt;
+        if (existingAttempt.isPresent()) {
+            attempt = existingAttempt.get();
+
+            // ✅ IMPORTANTE: Si ya está bloqueado, NO incrementar más el contador
+            if (attempt.isCurrentlyBlocked()) {
+                System.out.println("⚠️ Intento durante bloqueo activo (no incrementado) para IP: " + clientIp);
+                return; // No incrementar, mantener bloqueo fijo
+            }
+
+            // Actualizar email intentado y timestamp
+            attempt.setEmail(email);
+            attempt.incrementAttempt();
+
+            // Aplicar bloqueo si excede el límite
+            if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
+                attempt.applyProgressiveBlock();
+                System.out.println("🚫 IP bloqueada por exceder " + MAX_ATTEMPTS +
+                        " intentos: " + clientIp + " (email no revelado)");
+            }
+        } else {
+            // Crear nuevo registro para esta IP
+            attempt = new PasswordRecoveryAttempt();
+            attempt.setEmail(email);
+            attempt.setIpAddress(clientIp);
+            attempt.setAttemptCount(1);
+            attempt.setLastAttempt(LocalDateTime.now());
+            attempt.setCreatedAt(LocalDateTime.now());
+            attempt.setBlocked(false);
+        }
+
+        passwordRecoveryAttemptRepository.save(attempt);
+        System.out.println("📊 Intento #" + attempt.getAttemptCount() +
+                " registrado para IP: " + clientIp + " (email inexistente)");
     }
 
     /**

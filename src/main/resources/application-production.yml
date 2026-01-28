@@ -1,0 +1,143 @@
+server:
+  port: ${PORT:8080}
+  ssl:
+    enabled: false  # Render maneja SSL en el borde
+
+spring:
+  application:
+    name: auth-system
+
+  # Configuración de base de datos Aiven MySQL (usando variables de Render)
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false  # Desactivar en producción para performance
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+
+  # Configuración de email para producción (Brevo/Sendinblue)
+  mail:
+    host: ${SPRING_MAIL_HOST}
+    port: ${SPRING_MAIL_PORT}
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: false
+          starttls:
+            enable: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+        debug: false
+
+app:
+  security:
+    # IMPORTANTE: Forzar HTTPS en producción
+    https:
+      force: true
+      
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET}
+      expiration: 86400000  # 24 horas
+      refresh-expiration: 604800000  # 7 días
+
+    # Configuración de sesiones
+    session:
+      max-concurrent-sessions: 3
+      inactivity-timeout-minutes: 15
+      cleanup-interval-minutes: 5
+
+    two-factor:
+      issuer: ${APP_2FA_ISSUER:Casa de Música Castillo}
+
+    verification:
+      email:
+        expiration: 86400000  # 24 horas
+      sms:
+        expiration: 300000  # 5 minutos
+        max-attempts: 3
+
+    rate-limiting:
+      max-login-attempts: 5
+      lockout-duration: 900000  # 15 minutos
+
+    password-reset:
+      token-expiration: 3600000  # 1 hora en producción
+      max-attempts-per-hour: 3
+      max-attempts-per-day: 5
+      progressive-delay: true
+      cleanup-interval: 3600000
+      base-delay-minutes: 5
+      max-delay-minutes: 240
+
+  # URL base del frontend en producción
+  base-url: ${APP_BASE_URL}
+  
+  # Configuraciones de proveedores de email
+  email:
+    brevo:
+      api-key: ${APP_EMAIL_BREVO_API_KEY}
+    resend:
+      api-key: ${RESEND_API_KEY}
+    sendgrid:
+      api-key: ${SENDGRID_API_KEY:}
+    mailgun:
+      api-key: ${MAILGUN_API_KEY:}
+      domain: ${MAILGUN_DOMAIN:}
+
+  notification:
+    sms:
+      provider: ${SMS_PROVIDER:sinch}
+      project-id: ${APP_NOTIFICATION_SMS_PROJECT_ID}
+      access-key-id: ${APP_NOTIFICATION_SMS_ACCESS_KEY_ID}
+      secret-key: ${APP_NOTIFICATION_SMS_SECRET_KEY}
+
+# Configuración de CORS para producción
+cors:
+  allowed-origins: ${CORS_ORIGINS}
+  allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+  allowed-headers: "*"
+  allow-credentials: true
+  max-age: 3600
+
+# Actuator para health checks de Render
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /api/actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    db:
+      enabled: true
+
+# Logging para producción
+logging:
+  level:
+    root: INFO
+    com.security: INFO
+    org.springframework.web: INFO
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

@@ -139,9 +139,15 @@ public class AuthController {
             // ===== AUTENTICACIÓN =====
             User user = userService.findByEmail(email).orElse(null);
             if (user == null || !passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
-                // Registrar intento fallido por email e IP
-                loginSecurityService.recordFailedAttempt(email);
-                loginSecurityService.recordFailedAttempt(clientIp);
+                // ✅ SOLO registrar intento fallido si NO está bloqueado previamente
+                // Esto evita que el tiempo de bloqueo se acumule con nuevos intentos
+                boolean wasAlreadyLocked = loginSecurityService.isAccountLocked(email);
+
+                if (!wasAlreadyLocked) {
+                    // Registrar intento fallido por email e IP (SOLO si no estaba bloqueado)
+                    loginSecurityService.recordFailedAttempt(email);
+                    loginSecurityService.recordFailedAttempt(clientIp);
+                }
 
                 // Verificar si ahora está bloqueado para dar mensaje apropiado
                 if (loginSecurityService.isAccountLocked(email)) {

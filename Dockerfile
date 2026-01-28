@@ -33,13 +33,14 @@ USER appuser
 
 # Variables de entorno por defecto
 ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:+UseContainerSupport"
+ENV SPRING_PROFILES_ACTIVE=production
 
-# Puerto de la aplicación
+# Puerto de la aplicación (Render usa la variable PORT)
 EXPOSE 8080
 
 # Health check - dar más tiempo para iniciar (start-period=120s)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/api/actuator/health || exit 1
 
-# Comando de inicio
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Comando de inicio - Render proporciona la variable $PORT
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8080} -jar app.jar"]
