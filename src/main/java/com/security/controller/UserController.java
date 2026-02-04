@@ -4,6 +4,9 @@ import com.security.dto.request.ChangePasswordRequest;
 import com.security.dto.response.ApiResponse;
 import com.security.dto.response.UserResponse;
 import com.security.entity.User;
+import com.security.entity.Role;
+import com.security.enums.RoleName;
+import com.security.repository.RoleRepository;
 import com.security.security.CurrentUser;
 import com.security.security.UserPrincipal;
 import com.security.service.UserService;
@@ -16,6 +19,8 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/users")
@@ -27,6 +32,9 @@ public class UserController {
 
         @Autowired
         private PasswordEncoder passwordEncoder;
+
+        @Autowired
+        private RoleRepository roleRepository;
 
         /**
          * Obtener perfil del usuario actual autenticado
@@ -99,9 +107,9 @@ public class UserController {
 
         /**
          * Cambiar contraseña para usuarios autenticados
+         * Nota: Cualquier usuario autenticado puede cambiar su propia contraseña
          */
         @PostMapping("/change-password")
-        @PreAuthorize("hasRole('USER')")
         public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest request,
                         @CurrentUser UserPrincipal userPrincipal) {
                 try {
@@ -137,6 +145,80 @@ public class UserController {
                         e.printStackTrace();
                         return ResponseEntity.status(500)
                                         .body(new ApiResponse(false, "Error interno del servidor"));
+                }
+        }
+
+        /**
+         * ⚠️ ENDPOINT TEMPORAL PARA CREAR USUARIO ADMIN
+         * ⚠️ ELIMINAR O COMENTAR DESPUÉS DE CREAR EL ADMIN
+         * 
+         * Llama a este endpoint UNA VEZ con Postman o desde el navegador:
+         * POST http://localhost:8080/api/users/create-admin
+         * 
+         * Body JSON:
+         * {
+         * "firstName": "Admin",
+         * "lastName": "Principal",
+         * "email": "admin@casamusica.com",
+         * "password": "Admin123!",
+         * "phone": "1234567890"
+         * }
+         */
+        @PostMapping("/create-admin")
+        public ResponseEntity<?> createAdminUser(@RequestBody Map<String, String> request) {
+                try {
+                        // Verificar si ya existe un admin con ese email
+                        if (userService.existsByEmail(request.get("email"))) {
+                                return ResponseEntity.badRequest()
+                                                .body(new ApiResponse(false, "Ya existe un usuario con ese email"));
+                        }
+
+                        // Buscar o crear rol ADMIN
+                        Role adminRole = roleRepository.findByName(RoleName.ROLE_ADMIN)
+                                        .orElseThrow(() -> new RuntimeException(
+                                                        "Error: Admin role not found. Please run database migrations."));
+
+                        // Crear usuario admin
+                        User admin = new User();
+                        admin.setFirstName(request.get("firstName"));
+                        admin.setLastName(request.get("lastName"));
+                        admin.setEmail(request.get("email"));
+                        admin.setPassword(passwordEncoder.encode(request.get("password")));
+                        admin.setPhone(request.get("phone"));
+                        admin.setEnabled(true);
+                        admin.setTwoFactorEnabled(false);
+
+                        // IMPORTANTE: Asignar rol ADMIN
+                        Set<Role> roles = new HashSet<>();
+                        roles.add(adminRole);
+                        admin.setRoles(roles);
+
+                        // Guardar el usuario
+                        User savedAdmin = userService.save(admin);
+
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("id", savedAdmin.getId());
+                        response.put("email", savedAdmin.getEmail());
+                        response.put("firstName", savedAdmin.getFirstName());
+                        response.put("lastName", savedAdmin.getLastName());
+                        response.put("roles", savedAdmin.getRoles().stream()
+                                        .map(role -> role.getName().toString())
+                                        .toArray());
+                        response.put("message", "✅ Usuario administrador creado exitosamente");
+                        response.put("credentials", Map.of(
+                                        "email", savedAdmin.getEmail(),
+                                        "password", request.get("password"),
+                                        "note", "Guarda estas credenciales de forma segura"));
+                        response.put("warning", "⚠️ AHORA COMENTA O ELIMINA ESTE ENDPOINT POR SEGURIDAD");
+
+                        return ResponseEntity.ok(new ApiResponse(true,
+                                        "Admin user created successfully", response));
+
+                } catch (Exception e) {
+                        e.printStackTrace();
+                        return ResponseEntity.status(500)
+                                        .body(new ApiResponse(false,
+                                                        "Error creating admin user: " + e.getMessage()));
                 }
         }
 }

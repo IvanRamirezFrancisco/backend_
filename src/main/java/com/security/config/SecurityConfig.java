@@ -193,8 +193,10 @@ public class SecurityConfig {
                                                 .requestMatchers("/api/test/protected").authenticated()
                                                 .requestMatchers("/api/test/admin").hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                                                // Usuarios - usuarios normales pueden ver su perfil, admins todo
+                                                // Usuarios - usuarios normales pueden ver su perfil y cambiar
+                                                // contraseña, admins todo
                                                 .requestMatchers("/api/users/profile").authenticated()
+                                                .requestMatchers("/api/users/change-password").authenticated()
                                                 .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
 
                                                 // Todo lo demás requiere autenticación
