@@ -14,6 +14,8 @@ import com.security.service.PasswordResetService;
 import com.security.service.LoginSecurityService;
 import com.security.service.SessionManagementService;
 
+import java.util.Map;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +28,11 @@ import com.security.entity.User;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.security.security.JwtTokenProvider;
 
+import org.springframework.http.ResponseEntity;
+
 import java.util.HashMap;
+
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -37,7 +43,7 @@ public class AuthController {
     private AuthService authService;
 
     @Autowired
-    private VerificationService verificationService;
+    private VerificationService verificationService; // ← AÑADIR ESTA INYECCIÓN}}
     @Autowired
     private UserService userService;
     @Autowired
@@ -45,6 +51,9 @@ public class AuthController {
 
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
+
+    @Autowired
+    private PasswordResetService passwordResetService;
 
     @Autowired
     private LoginSecurityService loginSecurityService;
