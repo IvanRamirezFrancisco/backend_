@@ -7,12 +7,12 @@ spring:
   application:
     name: auth-system
 
-  # Configuración de base de datos Aiven MySQL (usando variables de Render)
+  # Configuración de base de datos PostgreSQL (Railway / variables de entorno)
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DATABASE_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:security_db}}
+    username: ${PGUSER:${SPRING_DATASOURCE_USERNAME:postgres}}
+    password: ${PGPASSWORD:${SPRING_DATASOURCE_PASSWORD:}}
+    driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
@@ -22,12 +22,23 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     show-sql: false  # Desactivar en producción para performance
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  # Límite de subida de archivos (CSV import — máximo lógico 5 MB en CsvController)
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 6MB
+      max-request-size: 7MB
 
   # Configuración de email para producción (Brevo/Sendinblue)
   mail:

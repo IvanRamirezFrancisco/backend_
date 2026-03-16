@@ -1,6 +1,5 @@
 package com.security.entity;
 
-import com.security.enums.RoleName;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -14,11 +13,14 @@ import java.util.Set;
 public class Role {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id")
     private Long id;
 
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false, unique = true, length = 60)
-    private RoleName name;
+    private String name;
+
+    @Column(length = 255)
+    private String description;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -31,11 +33,19 @@ public class Role {
     @ManyToMany(mappedBy = "roles", fetch = FetchType.LAZY)
     private Set<User> users = new HashSet<>();
 
+    /**
+     * Relacion ManyToMany con Permissions
+     * Un rol puede tener multiples permisos
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "role_permissions", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "permission_id"))
+    private Set<Permission> permissions = new HashSet<>();
+
     // Constructors
     public Role() {
     }
 
-    public Role(RoleName name) {
+    public Role(String name) {
         this.name = name;
     }
 
@@ -48,12 +58,20 @@ public class Role {
         this.id = id;
     }
 
-    public RoleName getName() {
+    public String getName() {
         return name;
     }
 
-    public void setName(RoleName name) {
+    public void setName(String name) {
         this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -78,6 +96,40 @@ public class Role {
 
     public void setUsers(Set<User> users) {
         this.users = users;
+    }
+
+    public Set<Permission> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(Set<Permission> permissions) {
+        this.permissions = permissions;
+    }
+
+    // ==================== Helper Methods ====================
+
+    /**
+     * Agrega un permiso al rol
+     */
+    public void addPermission(Permission permission) {
+        this.permissions.add(permission);
+        permission.getRoles().add(this);
+    }
+
+    /**
+     * Remueve un permiso del rol
+     */
+    public void removePermission(Permission permission) {
+        this.permissions.remove(permission);
+        permission.getRoles().remove(this);
+    }
+
+    /**
+     * Limpia todos los permisos del rol
+     */
+    public void clearPermissions() {
+        this.permissions.forEach(permission -> permission.getRoles().remove(this));
+        this.permissions.clear();
     }
 
     @Override

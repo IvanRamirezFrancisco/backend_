@@ -2,7 +2,6 @@ package com.security.service;
 
 import com.security.entity.User;
 import com.security.entity.Role;
-import com.security.enums.RoleName;
 import com.security.repository.UserRepository;
 import com.security.repository.RoleRepository;
 import org.slf4j.Logger;
@@ -196,8 +195,8 @@ public class RBACService {
      */
     private boolean isAdmin(User user) {
         return user.getRoles().stream()
-                .anyMatch(role -> RoleName.ROLE_ADMIN.equals(role.getName()) ||
-                        RoleName.ROLE_SUPER_ADMIN.equals(role.getName()));
+                .anyMatch(role -> "ROLE_ADMIN".equals(role.getName()) ||
+                        "ROLE_SUPER_ADMIN".equals(role.getName()));
     }
 
     /**
@@ -305,23 +304,17 @@ public class RBACService {
             // Validar que los roles existen
             Set<Role> roles = new HashSet<>();
             for (String roleNameStr : newRoles) {
-                try {
-                    RoleName roleName = RoleName.valueOf(roleNameStr);
-                    Optional<Role> roleOpt = roleRepository.findByName(roleName);
-                    if (roleOpt.isEmpty()) {
-                        logger.warn("Role not found: {}", roleName);
-                        return false;
-                    }
-                    roles.add(roleOpt.get());
-                } catch (IllegalArgumentException e) {
-                    logger.warn("Invalid role name: {}", roleNameStr);
+                Optional<Role> roleOpt = roleRepository.findByName(roleNameStr);
+                if (roleOpt.isEmpty()) {
+                    logger.warn("Role not found: {}", roleNameStr);
                     return false;
                 }
+                roles.add(roleOpt.get());
             }
 
             // Actualizar roles
             Set<String> oldRoles = user.getRoles().stream()
-                    .map(role -> role.getName().name())
+                    .map(role -> role.getName())
                     .collect(Collectors.toSet());
 
             user.setRoles(roles);

@@ -31,8 +31,9 @@ public class User {
     @Column(name = "last_name", nullable = false)
     private String lastName;
 
-    // Username es opcional - validación manual en service si es necesario
-    @Column(nullable = true, unique = true, length = 30)
+    // Username siempre presente (NOT NULL en BD) — se autogenera desde el email si
+    // no se provee
+    @Column(nullable = false, unique = true, length = 30)
     private String username;
 
     @NotBlank
@@ -47,7 +48,17 @@ public class User {
     private String password;
 
     @Size(max = 20)
+    @Column(name = "phone", length = 20)
     private String phone;
+
+    @Column(name = "is_customer", nullable = false)
+    private Boolean isCustomer = false;
+
+    @Column(name = "total_orders")
+    private Integer totalOrders = 0;
+
+    @Column(name = "total_spent", precision = 15, scale = 2)
+    private java.math.BigDecimal totalSpent = java.math.BigDecimal.ZERO;
 
     @Column(nullable = false)
     private Boolean enabled = false;
@@ -103,6 +114,9 @@ public class User {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<BackupCode> backupCodes = new HashSet<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Address> addresses = new HashSet<>();
 
     @Enumerated(EnumType.STRING)
     @Column(name = "two_factor_type", length = 50)
@@ -358,6 +372,38 @@ public class User {
 
     public void setActiveSessions(Set<ActiveSession> activeSessions) {
         this.activeSessions = activeSessions;
+    }
+
+    public Boolean getIsCustomer() {
+        return isCustomer;
+    }
+
+    public void setIsCustomer(Boolean isCustomer) {
+        this.isCustomer = isCustomer;
+    }
+
+    public Integer getTotalOrders() {
+        return totalOrders;
+    }
+
+    public void setTotalOrders(Integer totalOrders) {
+        this.totalOrders = totalOrders;
+    }
+
+    public java.math.BigDecimal getTotalSpent() {
+        return totalSpent;
+    }
+
+    public void setTotalSpent(java.math.BigDecimal totalSpent) {
+        this.totalSpent = totalSpent;
+    }
+
+    public Set<Address> getAddresses() {
+        return addresses;
+    }
+
+    public void setAddresses(Set<Address> addresses) {
+        this.addresses = addresses;
     }
 
     // Helper methods

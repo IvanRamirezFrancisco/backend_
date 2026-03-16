@@ -10,10 +10,10 @@ spring:
     name: auth-system
 
   datasource:
-    url: jdbc:mysql://${MYSQLHOST:localhost}:${MYSQLPORT:3306}/${MYSQLDATABASE:railway}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&connectTimeout=30000&socketTimeout=60000
-    username: ${MYSQLUSER:root}
-    password: ${MYSQLPASSWORD:}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DATABASE_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:security_db}}
+    username: ${PGUSER:spring_app}
+    password: ${PGPASSWORD:SpringSeguro2026!}
+    driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 5
       minimum-idle: 1
@@ -23,13 +23,17 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     show-sql: false
     open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
 
   mail:
     host: ${MAIL_HOST:smtp-relay.brevo.com}
@@ -124,6 +128,13 @@ app:
       suspicious-threshold: 5
       alert-cooldown-minutes: 15
 
+  # ============================================================
+  # BACKUP DE BASE DE DATOS
+  # ============================================================
+  backup:
+    pg-dump-path: ${PG_DUMP_PATH:pg_dump}
+    temp-dir: ${BACKUP_TEMP_DIR:/tmp/casamusica-backups}
+
   base-url: ${FRONTEND_URL:http://localhost:4200}
   
   # Configuración OAuth2.0
@@ -157,6 +168,12 @@ app:
       secret-key: ${SINCH_SECRET_KEY:39cb2c4b8b87402ba17fb4bbf0fbac45}
       from-number: ${SINCH_FROM_NUMBER:+447418630656}
       dev-mode: false
+
+# ── Supabase Storage (off-site backup vault) ────────────────────────────────
+supabase:
+  url: ${SUPABASE_URL:https://dwdteqmfhclrtlknkwcd.supabase.co}
+  service-key: ${SUPABASE_SERVICE_KEY:}
+  bucket-name: ${SUPABASE_BUCKET:casamusica-backups}
 
 logging:
   level:

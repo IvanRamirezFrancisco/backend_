@@ -151,8 +151,8 @@ public class SecurityConfig {
                                                                 .preload(true))
 
                                                 // Referrer-Policy: Controla información de referencia
-                                                .referrerPolicy(
-                                                                org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                                                .referrerPolicy(referrer -> referrer
+                                                                .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
 
                                 // Autorización de endpoints
                                 .authorizeHttpRequests(authz -> authz
@@ -160,10 +160,13 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                                                 // ========== ENDPOINTS PÚBLICOS ==========
-                                                // Autenticación
-                                                .requestMatchers("/api/auth/**").permitAll()
+                                                // API pública del Storefront (sin autenticación)
+                                                .requestMatchers("/api/public/**").permitAll()
 
-                                                // 2FA endpoints para login (sin autenticación) - MUY IMPORTANTE
+                                                // Autenticación
+                                                .requestMatchers("/api/auth/**").permitAll() // 2FA endpoints para login
+                                                                                             // (sin autenticación) -
+                                                                                             // MUY IMPORTANTE
                                                 .requestMatchers("/api/2fa/verify").permitAll()
                                                 .requestMatchers("/api/2fa/send-login-code").permitAll()
 
@@ -177,6 +180,10 @@ public class SecurityConfig {
                                                 .requestMatchers("/swagger-ui/**").permitAll()
                                                 .requestMatchers("/v3/api-docs/**").permitAll()
                                                 .requestMatchers("/h2-console/**").permitAll()
+
+                                                // Upload de archivos y servir imágenes estáticas
+                                                .requestMatchers("/api/upload/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                                                .requestMatchers("/uploads/**").permitAll() // Servir archivos estáticos
 
                                                 // ========== ENDPOINTS PROTEGIDOS ==========
                                                 // Administración - Solo ADMIN/SUPER_ADMIN
@@ -196,7 +203,6 @@ public class SecurityConfig {
                                                 // Usuarios - usuarios normales pueden ver su perfil y cambiar
                                                 // contraseña, admins todo
                                                 .requestMatchers("/api/users/profile").authenticated()
-                                                .requestMatchers("/api/users/change-password").authenticated()
                                                 .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
 
                                                 // Todo lo demás requiere autenticación

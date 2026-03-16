@@ -7,7 +7,6 @@ import com.security.entity.User;
 ///agregue
 import com.security.entity.VerificationToken;
 
-import com.security.enums.RoleName;
 //
 import com.security.enums.TokenType;
 
@@ -66,13 +65,18 @@ public class UserService {
         user.setEmail(registerRequest.getEmail());
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
         user.setPhone(registerRequest.getPhone());
-        user.setEnabled(false); // Will be enabled after email verification
+        user.setEnabled(false); // Se habilitará tras verificar el email
         user.setTwoFactorEnabled(false);
         user.setAccountNonExpired(true);
         user.setAccountNonLocked(true);
         user.setCredentialsNonExpired(true);
 
-        Role userRole = roleRepository.findByName(RoleName.ROLE_USER)
+        // CRÍTICO: Los usuarios registrados públicamente son CLIENTES, no Staff.
+        // Sin esta línea el valor por defecto de la entidad es false → aparecerían como
+        // Staff.
+        user.setIsCustomer(true);
+
+        Role userRole = roleRepository.findByName("ROLE_USER")
                 .orElseThrow(() -> new RuntimeException("User Role not set."));
 
         user.setRoles(Collections.singleton(userRole));
@@ -296,9 +300,9 @@ public class UserService {
         userResponse.setCreatedAt(user.getCreatedAt());
         userResponse.setUpdatedAt(user.getUpdatedAt());
 
-        // CORREGIDO: Usar enum name()
+        // Obtener nombres de roles (ahora es String directamente)
         Set<String> roleNames = user.getRoles().stream()
-                .map(role -> role.getName().name())
+                .map(role -> role.getName())
                 .collect(Collectors.toSet());
         userResponse.setRoles(roleNames);
 

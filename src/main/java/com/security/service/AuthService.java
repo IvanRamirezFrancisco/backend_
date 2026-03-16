@@ -108,9 +108,9 @@ public class AuthService {
             Long userId = tokenProvider.getUserIdFromJWT(token);
             User user = userService.getUserById(userId);
 
-            // CORREGIDO: Usar enum name()
+            // Obtener nombres de roles (String directamente)
             Set<String> roles = user.getRoles().stream()
-                    .map(role -> role.getName().name())
+                    .map(role -> role.getName())
                     .collect(Collectors.toSet());
 
             String newToken = tokenProvider.generateTokenFromUserId(userId, user.getEmail(), roles);
@@ -152,9 +152,9 @@ public class AuthService {
         userResponse.setCreatedAt(user.getCreatedAt());
         userResponse.setUpdatedAt(user.getUpdatedAt());
 
-        // CORREGIDO: Usar enum name()
+        // Obtener nombres de roles (String directamente)
         Set<String> roleNames = user.getRoles().stream()
-                .map(role -> role.getName().name())
+                .map(role -> role.getName())
                 .collect(Collectors.toSet());
         userResponse.setRoles(roleNames);
 

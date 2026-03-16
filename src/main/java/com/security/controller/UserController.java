@@ -5,7 +5,6 @@ import com.security.dto.response.ApiResponse;
 import com.security.dto.response.UserResponse;
 import com.security.entity.User;
 import com.security.entity.Role;
-import com.security.enums.RoleName;
 import com.security.repository.RoleRepository;
 import com.security.security.CurrentUser;
 import com.security.security.UserPrincipal;
@@ -174,7 +173,7 @@ public class UserController {
                         }
 
                         // Buscar o crear rol ADMIN
-                        Role adminRole = roleRepository.findByName(RoleName.ROLE_ADMIN)
+                        Role adminRole = roleRepository.findByName("ROLE_ADMIN")
                                         .orElseThrow(() -> new RuntimeException(
                                                         "Error: Admin role not found. Please run database migrations."));
 
