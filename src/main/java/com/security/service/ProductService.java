@@ -422,13 +422,14 @@ public class ProductService {
                 attribute.setProduct(product);
                 attribute.setAttributeName(attributeDTO.getKey().trim());
                 attribute.setAttributeValue(attributeDTO.getValue().trim());
-                attribute.setDisplayOrder(
-                        attributeDTO.getDisplayOrder() != null ? attributeDTO.getDisplayOrder() : order++);
+                int displayOrder = attributeDTO.getDisplayOrder() != null ? attributeDTO.getDisplayOrder() : order++;
+                attribute.setDisplayOrder(displayOrder);
 
+                // name y value sanitizados con LogSanitizer; displayOrder es int primitivo (CWE-117 safe)
                 logger.info(">>> Guardando atributo en BD: name='{}', value='{}', order={}",
                         LogSanitizer.sanitize(attribute.getAttributeName()),
                         LogSanitizer.sanitize(attribute.getAttributeValue()),
-                        attribute.getDisplayOrder());
+                        displayOrder);
 
                 ProductAttribute saved = productAttributeRepository.save(attribute);
                 savedCount++;
