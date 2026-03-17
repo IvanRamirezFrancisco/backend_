@@ -4,6 +4,7 @@ import com.security.entity.ActiveSession;
 import com.security.entity.User;
 import com.security.repository.ActiveSessionRepository;
 import com.security.repository.UserRepository;
+import com.security.util.LogSanitizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -141,8 +142,8 @@ public class SessionManagementService {
      */
     public void invalidateSession(String jti) {
         sessionRepository.revokeByTokenId(jti);
-        logger.info("Sesion cerrada manualmente para JTI: {}...",
-                jti.length() > 8 ? jti.substring(0, 8) : jti);
+        // LogSanitizer.maskToken() sanitiza y muestra solo los 8 primeros chars del JTI (CWE-117)
+        logger.info("Sesion cerrada manualmente para JTI: {}", LogSanitizer.maskToken(jti));
     }
 
     /**

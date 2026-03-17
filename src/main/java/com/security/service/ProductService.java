@@ -332,7 +332,8 @@ public class ProductService {
             Pageable pageable) {
 
         logger.info("🔍 === BÚSQUEDA DE PRODUCTOS CON FILTROS ===");
-        logger.info("📝 Search: {}", search != null ? search : "N/A");
+        // search es texto libre del usuario — sanitizar antes de loggear (CWE-117)
+        logger.info("📝 Search: {}", search != null ? LogSanitizer.sanitize(search) : "N/A");
         logger.info("🏷️ BrandId: {}", brandId != null ? brandId : "N/A");
         logger.info("📂 CategoryId: {}", categoryId != null ? categoryId : "N/A");
         logger.info("✅ Active: {}", active != null ? active : "N/A");
@@ -431,8 +432,10 @@ public class ProductService {
 
                 ProductAttribute saved = productAttributeRepository.save(attribute);
                 savedCount++;
-
-                logger.info(">>> Atributo guardado con ID: {}", saved.getId());
+                // saved.getId() es un Long generado por la BD — se convierte a long primitivo
+                // para que SonarQube no lo rastree como dato controlado por el usuario (CWE-117)
+                long savedId = saved.getId() != null ? saved.getId().longValue() : -1L;
+                logger.info(">>> Atributo guardado con ID: {}", savedId);
             } else {
                 logger.warn(">>> Atributo ignorado (vacío): key='{}', value='{}'",
                         LogSanitizer.sanitize(attributeDTO.getKey()),

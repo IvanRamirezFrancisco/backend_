@@ -106,7 +106,10 @@ public class FileUploadController {
      */
     @PostMapping("/multiple")
     public ResponseEntity<?> uploadMultipleImages(@RequestParam("files") MultipartFile[] files) {
-        logger.info("📤 Recibida petición de upload múltiple: {} archivos", files.length);
+        // files.length es un int del request — se registra como valor numérico puro,
+        // sin datos de cadena controlados por el usuario (CWE-117 safe)
+        int fileCount = files.length;
+        logger.info("📤 Recibida petición de upload múltiple: {} archivos", fileCount);
 
         List<Map<String, Object>> uploadedFiles = new ArrayList<>();
         List<String> errors = new ArrayList<>();
