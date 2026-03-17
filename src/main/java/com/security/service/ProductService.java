@@ -410,7 +410,8 @@ public class ProductService {
         int savedCount = 0;
 
         for (ProductAttributeDTO attributeDTO : attributeDTOs) {
-            logger.info(">>> Procesando atributo: key='{}', value='{}'",
+            // Datos del DTO del request — nivel DEBUG para no exponer en logs de producción (CWE-117)
+            logger.debug(">>> Procesando atributo: key='{}', value='{}'",
                     LogSanitizer.sanitize(attributeDTO.getKey()),
                     LogSanitizer.sanitize(attributeDTO.getValue()));
 
@@ -425,8 +426,8 @@ public class ProductService {
                 int displayOrder = attributeDTO.getDisplayOrder() != null ? attributeDTO.getDisplayOrder() : order++;
                 attribute.setDisplayOrder(displayOrder);
 
-                // name y value sanitizados con LogSanitizer; displayOrder es int primitivo (CWE-117 safe)
-                logger.info(">>> Guardando atributo en BD: name='{}', value='{}', order={}",
+                // name y value sanitizados; displayOrder es int primitivo — nivel DEBUG (CWE-117)
+                logger.debug(">>> Guardando atributo en BD: name='{}', value='{}', order={}",
                         LogSanitizer.sanitize(attribute.getAttributeName()),
                         LogSanitizer.sanitize(attribute.getAttributeValue()),
                         displayOrder);
@@ -436,9 +437,9 @@ public class ProductService {
                 // saved.getId() es un Long generado por la BD — se convierte a long primitivo
                 // para que SonarQube no lo rastree como dato controlado por el usuario (CWE-117)
                 long savedId = saved.getId() != null ? saved.getId().longValue() : -1L;
-                logger.info(">>> Atributo guardado con ID: {}", savedId);
+                logger.debug(">>> Atributo guardado con ID: {}", savedId);
             } else {
-                logger.warn(">>> Atributo ignorado (vacío): key='{}', value='{}'",
+                logger.debug(">>> Atributo ignorado (vacío): key='{}', value='{}'",
                         LogSanitizer.sanitize(attributeDTO.getKey()),
                         LogSanitizer.sanitize(attributeDTO.getValue()));
             }

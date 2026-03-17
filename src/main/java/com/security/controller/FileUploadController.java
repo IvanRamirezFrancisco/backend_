@@ -109,7 +109,7 @@ public class FileUploadController {
         // files.length es un int del request — se registra como valor numérico puro,
         // sin datos de cadena controlados por el usuario (CWE-117 safe)
         int fileCount = files.length;
-        logger.info("📤 Recibida petición de upload múltiple: {} archivos", fileCount);
+        logger.debug("📤 Recibida petición de upload múltiple: {} archivos", fileCount);
 
         List<Map<String, Object>> uploadedFiles = new ArrayList<>();
         List<String> errors = new ArrayList<>();
@@ -119,7 +119,7 @@ public class FileUploadController {
             // i+1 y fileCount son ints internos; filename sanitizado; size es long del sistema de archivos
             int fileIndex = i + 1;
             long fileSize = file.getSize();
-            logger.info("  📄 Procesando archivo {}/{}: {} ({} bytes)",
+            logger.debug("  📄 Procesando archivo {}/{}: {} ({} bytes)",
                     fileIndex, fileCount,
                     LogSanitizer.sanitizeFilename(file.getOriginalFilename()),
                     fileSize);
