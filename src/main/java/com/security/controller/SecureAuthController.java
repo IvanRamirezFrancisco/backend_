@@ -6,6 +6,7 @@ import com.security.dto.response.JwtAuthResponse;
 import com.security.service.LoginSecurityService;
 import com.security.service.SecureJwtService;
 import com.security.service.AuthService;
+import com.security.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -79,7 +80,7 @@ public class SecureAuthController {
                 long remainingMinutes = loginSecurityService.getLockoutRemainingMinutes(identifier);
 
                 logger.warn("Login attempt for locked account: {} from IP: {}",
-                        maskEmail(identifier), clientIp);
+                        LogSanitizer.maskEmail(identifier), LogSanitizer.sanitize(clientIp));
 
                 return ResponseEntity.status(423).body(new ApiResponse(
                         false,
@@ -116,7 +117,7 @@ public class SecureAuthController {
             authResponse.setExpiresIn(900L); // 15 minutos
 
             logger.info("Successful login for user: {} from IP: {}",
-                    maskEmail(identifier), clientIp);
+                    LogSanitizer.maskEmail(identifier), LogSanitizer.sanitize(clientIp));
 
             return ResponseEntity.ok(new ApiResponse(true, "Login exitoso", authResponse));
 
@@ -127,11 +128,11 @@ public class SecureAuthController {
             int failedAttempts = loginSecurityService.getFailedAttempts(identifier);
 
             logger.warn("Failed login attempt {} for user: {} from IP: {}",
-                    failedAttempts, maskEmail(identifier), clientIp);
+                    failedAttempts, LogSanitizer.maskEmail(identifier), LogSanitizer.sanitize(clientIp));
 
             return ResponseEntity.status(401).body(new ApiResponse(
                     false,
-                    "Credenciales inválidas. Intento " + failedAttempts + " de 5."));
+                    "Credenciales invalidas. Intento " + failedAttempts + " de 5."));
 
         } catch (Exception e) {
             logger.error("Error during secure login: {}", e.getMessage());
@@ -157,14 +158,14 @@ public class SecureAuthController {
                 if (allDevices && userId != null) {
                     // Invalidar todas las sesiones del usuario
                     loginSecurityService.invalidateAllUserSessions(userId);
-                    logger.info("All sessions invalidated for user: {}", userId);
+                    logger.info("All sessions invalidated for user: {}", LogSanitizer.sanitize(userId));
                 } else {
                     // Invalidar solo esta sesión
                     jwtService.invalidateToken(token);
                     if (userId != null) {
                         loginSecurityService.invalidateSession(userId);
                     }
-                    logger.info("Single session invalidated for user: {}", userId);
+                    logger.info("Single session invalidated for user: {}", LogSanitizer.sanitize(userId));
                 }
             }
 
@@ -267,18 +268,5 @@ public class SecureAuthController {
         }
 
         return request.getRemoteAddr();
-    }
-
-    /**
-     * Enmascara email para logging seguro
-     */
-    private String maskEmail(String email) {
-        if (email == null || email.length() < 3)
-            return "***";
-        int atIndex = email.indexOf('@');
-        if (atIndex > 0) {
-            return email.substring(0, 1) + "***" + email.substring(atIndex);
-        }
-        return email.substring(0, 1) + "***";
     }
 }

@@ -9,15 +9,20 @@ import com.warrenstrange.googleauth.GoogleAuthenticator;
 import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class TotpService {
+    private static final Logger logger = LoggerFactory.getLogger(TotpService.class);
 
     @Value("${app.security.two-factor.issuer:AuthSystem}")
     private String issuer;
@@ -48,7 +53,7 @@ public class TotpService {
             int testCode = gAuth.getTotpPassword(secret);
             System.out.println("✅ Secret válido - código de prueba generado: " + testCode);
         } catch (Exception e) {
-            System.err.println("❌ Error validando secret generado: " + e.getMessage());
+            logger.error("❌ Error validando secret generado: " + e.getMessage());
             throw new RuntimeException("Secret generado inválido", e);
         }
 
@@ -87,7 +92,7 @@ public class TotpService {
             return otpAuthUrl;
 
         } catch (Exception e) {
-            System.err.println("❌ Error generando URL otpauth: " + e.getMessage());
+            logger.error("❌ Error generando URL otpauth: " + e.getMessage());
             throw new RuntimeException("Error generando URL otpauth", e);
         }
     }
@@ -184,7 +189,7 @@ public class TotpService {
             return false;
 
         } catch (Exception e) {
-            System.err.println("❌ ERROR CRÍTICO en verificación TOTP: " + e.getMessage());
+            logger.error("❌ ERROR CRÍTICO en verificación TOTP: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -198,7 +203,7 @@ public class TotpService {
             int codeInt = Integer.parseInt(code);
             return verifyCode(secret, codeInt);
         } catch (NumberFormatException e) {
-            System.err.println("❌ Código inválido (no es número): " + code);
+            logger.error("❌ Código inválido (no es número): {}", code);
             return false;
         }
     }
@@ -218,7 +223,7 @@ public class TotpService {
 
             return formattedCode;
         } catch (Exception e) {
-            System.err.println("❌ Error generando código actual: " + e.getMessage());
+            logger.error("❌ Error generando código actual: " + e.getMessage());
             throw new RuntimeException("Error generando código de prueba", e);
         }
     }

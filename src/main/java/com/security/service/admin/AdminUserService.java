@@ -8,6 +8,7 @@ import com.security.exception.SecurityViolationException;
 import com.security.repository.RoleRepository;
 import com.security.repository.UserRepository;
 import com.security.service.AuditLogService;
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -356,7 +357,8 @@ public class AdminUserService {
             auditLogService.logUserUpdate(updatedUser.getId(), updatedUser.getEmail(), currentAdmin,
                     changes.toString());
             logger.info("✅ Usuario Staff actualizado: {} (ID: {}) por {}. Cambios: {}",
-                    updatedUser.getEmail(), updatedUser.getId(), currentAdmin, changes.toString());
+                    LogSanitizer.maskEmail(updatedUser.getEmail()), updatedUser.getId(),
+                    LogSanitizer.sanitize(currentAdmin), LogSanitizer.sanitize(changes.toString()));
         }
 
         return convertToResponseDTO(updatedUser);
@@ -390,12 +392,14 @@ public class AdminUserService {
         // Auditoría
         if (updatedUser.getEnabled()) {
             auditLogService.logUserActivation(updatedUser.getId(), updatedUser.getEmail(), currentAdmin);
-            logger.info("✅ Usuario Staff activado: {} (ID: {}) por {}", updatedUser.getEmail(), updatedUser.getId(),
-                    currentAdmin);
+            logger.info("✅ Usuario Staff activado: {} (ID: {}) por {}",
+                    LogSanitizer.maskEmail(updatedUser.getEmail()), updatedUser.getId(),
+                    LogSanitizer.sanitize(currentAdmin));
         } else {
             auditLogService.logUserDeactivation(updatedUser.getId(), updatedUser.getEmail(), currentAdmin);
-            logger.info("⚠️ Usuario Staff desactivado: {} (ID: {}) por {}", updatedUser.getEmail(), updatedUser.getId(),
-                    currentAdmin);
+            logger.info("⚠️ Usuario Staff desactivado: {} (ID: {}) por {}",
+                    LogSanitizer.maskEmail(updatedUser.getEmail()), updatedUser.getId(),
+                    LogSanitizer.sanitize(currentAdmin));
         }
 
         return convertToResponseDTO(updatedUser);
@@ -429,12 +433,14 @@ public class AdminUserService {
         // Auditoría
         if (updatedUser.getAccountNonLocked()) {
             auditLogService.logAccountUnlock(updatedUser.getId(), updatedUser.getEmail(), currentAdmin);
-            logger.info("✅ Cuenta desbloqueada: {} (ID: {}) por {}", updatedUser.getEmail(), updatedUser.getId(),
-                    currentAdmin);
+            logger.info("✅ Cuenta desbloqueada: {} (ID: {}) por {}",
+                    LogSanitizer.maskEmail(updatedUser.getEmail()), updatedUser.getId(),
+                    LogSanitizer.sanitize(currentAdmin));
         } else {
             auditLogService.logAccountLock(updatedUser.getId(), updatedUser.getEmail(), currentAdmin);
-            logger.info("⚠️ Cuenta bloqueada: {} (ID: {}) por {}", updatedUser.getEmail(), updatedUser.getId(),
-                    currentAdmin);
+            logger.info("⚠️ Cuenta bloqueada: {} (ID: {}) por {}",
+                    LogSanitizer.maskEmail(updatedUser.getEmail()), updatedUser.getId(),
+                    LogSanitizer.sanitize(currentAdmin));
         }
 
         return convertToResponseDTO(updatedUser);
@@ -467,12 +473,13 @@ public class AdminUserService {
         try {
             auditLogService.logUserDeactivation(userId, userEmail, currentAdmin);
         } catch (Exception auditEx) {
-            logger.warn("⚠️ No se pudo registrar audit log de eliminación para {}: {}", userEmail,
-                    auditEx.getMessage());
+            logger.warn("⚠️ No se pudo registrar audit log de eliminación para {}: {}",
+                    LogSanitizer.maskEmail(userEmail), auditEx.getMessage());
         }
 
         userRepository.delete(user);
-        logger.info("🗑️ Usuario Staff eliminado: {} (ID: {}) por {}", userEmail, userId, currentAdmin);
+        logger.info("🗑️ Usuario Staff eliminado: {} (ID: {}) por {}",
+                LogSanitizer.maskEmail(userEmail), userId, LogSanitizer.sanitize(currentAdmin));
     }
 
     /**
@@ -496,12 +503,13 @@ public class AdminUserService {
         try {
             auditLogService.logAccountUnlock(updatedUser.getId(), updatedUser.getEmail(), currentAdmin);
         } catch (Exception auditEx) {
-            logger.warn("⚠️ No se pudo registrar audit log de reset para {}: {}", updatedUser.getEmail(),
-                    auditEx.getMessage());
+            logger.warn("⚠️ No se pudo registrar audit log de reset para {}: {}",
+                    LogSanitizer.maskEmail(updatedUser.getEmail()), auditEx.getMessage());
         }
 
-        logger.info("🔓 Intentos fallidos reseteados para: {} (ID: {}) por {}", updatedUser.getEmail(),
-                updatedUser.getId(), currentAdmin);
+        logger.info("🔓 Intentos fallidos reseteados para: {} (ID: {}) por {}",
+                LogSanitizer.maskEmail(updatedUser.getEmail()),
+                updatedUser.getId(), LogSanitizer.sanitize(currentAdmin));
         return convertToResponseDTO(updatedUser);
     }
 

@@ -4,14 +4,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.security.repository.SecuritySettingsRepository;
 import com.security.entity.SecuritySetting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Servicio para manejar configuraciones de seguridad desde la base de datos
  */
 @Service
 public class SecuritySettingsService {
+    private static final Logger logger = LoggerFactory.getLogger(SecuritySettingsService.class);
     
     @Autowired
     private SecuritySettingsRepository securitySettingsRepository;
@@ -88,7 +93,7 @@ public class SecuritySettingsService {
             securitySettingsRepository.save(setting);
         } catch (Exception e) {
             // Log error pero no fallar
-            System.err.println("Error guardando configuración " + key + ": " + e.getMessage());
+            logger.error("Error guardando configuración " + key + ": " + e.getMessage());
         }
     }
 }

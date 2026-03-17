@@ -13,11 +13,16 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     @Autowired
     private JwtTokenProvider tokenProvider;
@@ -87,11 +92,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                        logger.debug("✅ Sesión válida y activa para JTI: " + jti);
+                        logger.debug("✅ Sesión válida y activa para JTI: {}",
+                                jti.length() > 8 ? jti.substring(0, 8) + "…" : jti);
                     } else {
                         // ✅ SESIÓN INVÁLIDA o REVOCADA: Limpiar contexto de seguridad
                         SecurityContextHolder.clearContext();
-                        logger.warn("🔒 Sesión inválida/revocada para JTI: " + jti);
+                        logger.warn("🔒 Sesión inválida/revocada para JTI: {}",
+                                jti != null && jti.length() > 8 ? jti.substring(0, 8) + "…" : jti);
                     }
                 } else {
                     // Token JWT inválido
@@ -104,7 +111,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } catch (Exception ex) {
             // Limpiar contexto en caso de error
             SecurityContextHolder.clearContext();
-            logger.error("❌ Error procesando JWT: " + ex.getMessage());
+            logger.error("❌ Error procesando JWT: {}", ex.getMessage());
         }
 
         filterChain.doFilter(request, response);

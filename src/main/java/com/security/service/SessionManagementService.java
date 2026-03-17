@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
@@ -24,6 +26,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class SessionManagementService {
+
+    private static final Logger logger = LoggerFactory.getLogger(SessionManagementService.class);
 
     @Autowired
     private ActiveSessionRepository sessionRepository;
@@ -55,7 +59,7 @@ public class SessionManagementService {
         List<ActiveSession> activeSessions = sessionRepository.findActiveSessionsByUser(user);
         int activeCount = activeSessions.size();
 
-        System.out.println("🔍 Usuario " + userEmail + " tiene " + activeCount + " sesiones activas");
+        logger.debug("Usuario {} tiene {} sesiones activas", user.getEmail(), activeCount);
 
         // Si count >= 3: Encontrar y revocar el token más antiguo
         if (activeCount >= 3) {
@@ -65,10 +69,8 @@ public class SessionManagementService {
             if (oldestSession.isPresent()) {
                 ActiveSession sessionToRevoke = oldestSession.get();
                 sessionRepository.revokeSession(sessionToRevoke.getId());
-
-                System.out.println("🔒 Token más antiguo REVOCADO: " +
-                        sessionToRevoke.getJwtTokenId().substring(0, 8) + "..." +
-                        " (creado: " + sessionToRevoke.getCreatedAt() + ")");
+                logger.info("Sesion mas antigua revocada por limite de sesiones concurrentes (JTI: {}...)",
+                        sessionToRevoke.getJwtTokenId().substring(0, 8));
             }
         }
 
@@ -76,8 +78,8 @@ public class SessionManagementService {
         ActiveSession newSession = new ActiveSession(user, jti, ipAddress, userAgent, tokenExpiry);
         sessionRepository.save(newSession);
 
-        System.out.println("✅ Nueva sesión creada: " + jti.substring(0, 8) + "..." + " para " + userEmail +
-                " (Dispositivo: " + extractDeviceInfo(userAgent) + ")");
+        logger.info("Nueva sesion creada para {} (dispositivo: {})",
+                user.getEmail(), extractDeviceInfo(userAgent));
 
         return jti;
     }
@@ -90,14 +92,16 @@ public class SessionManagementService {
         Optional<ActiveSession> sessionOpt = sessionRepository.findByJwtTokenId(jti);
 
         if (sessionOpt.isEmpty()) {
-            System.out.println("❌ Sesión no encontrada: " + jti);
+            logger.debug("Sesion no encontrada para JTI: {}...",
+                    jti.length() > 8 ? jti.substring(0, 8) : jti);
             return false;
         }
 
         ActiveSession session = sessionOpt.get();
 
         if (session.getRevoked()) {
-            System.out.println("❌ Sesión revocada: " + jti);
+            logger.debug("Sesion revocada para JTI: {}...",
+                    jti.length() > 8 ? jti.substring(0, 8) : jti);
             return false;
         }
 
@@ -105,16 +109,16 @@ public class SessionManagementService {
         if (session.isInactive(inactivityTimeoutMinutes)) {
             // Sesión expirada por inactividad
             sessionRepository.revokeSession(session.getId());
-
-            System.out.println("⏰ Sesión " + jti + " expirada por inactividad (>" + inactivityTimeoutMinutes + " min)");
+            logger.info("Sesion expirada por inactividad (>{} min) para JTI: {}...",
+                    inactivityTimeoutMinutes, jti.length() > 8 ? jti.substring(0, 8) : jti);
             return false;
         }
 
         // Verificar expiración normal del token
         if (session.isExpired()) {
             sessionRepository.revokeSession(session.getId());
-
-            System.out.println("⏰ Sesión " + jti + " expirada normalmente");
+            logger.debug("Sesion expirada normalmente para JTI: {}...",
+                    jti.length() > 8 ? jti.substring(0, 8) : jti);
             return false;
         }
 
@@ -137,8 +141,8 @@ public class SessionManagementService {
      */
     public void invalidateSession(String jti) {
         sessionRepository.revokeByTokenId(jti);
-
-        System.out.println("🚪 Sesión " + jti + " cerrada manualmente");
+        logger.info("Sesion cerrada manualmente para JTI: {}...",
+                jti.length() > 8 ? jti.substring(0, 8) : jti);
     }
 
     /**
@@ -154,8 +158,8 @@ public class SessionManagementService {
         // Revocar todas en la base de datos
         sessionRepository.revokeAllUserSessions(user);
 
-        System.out.println(
-                "🔒 Todas las sesiones cerradas para " + userEmail + " (" + userSessions.size() + " sesiones)");
+        logger.info("Todas las sesiones cerradas para {} ({} sesiones)",
+                userEmail, userSessions.size());
     }
 
     /**
@@ -201,7 +205,8 @@ public class SessionManagementService {
         }
 
         if (!expiredSessions.isEmpty()) {
-            System.out.println("🧹 Limpieza automática: " + expiredSessions.size() + " sesiones expiradas eliminadas");
+            logger.info("Limpieza automatica: {} sesiones expiradas eliminadas",
+                    expiredSessions.size());
         }
 
         // Limpieza de registros muy antiguos (más de 7 días)

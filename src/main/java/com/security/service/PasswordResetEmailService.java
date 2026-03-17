@@ -1,147 +1,108 @@
 package com.security.service;
 
 import com.security.entity.User;
+import com.security.util.LogSanitizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+/**
+ * Servicio de email especializado en flujos de recuperacion de contrasena.
+ * Delega el envio real a {@link EmailService} para reutilizar la cadena
+ * Brevo API -> Resend API -> SMTP y no duplicar logica de transporte.
+ */
 @Service
 public class PasswordResetEmailService {
 
-    @Autowired
-    private JavaMailSender javaMailSender;
+    private static final Logger logger = LoggerFactory.getLogger(PasswordResetEmailService.class);
 
-    @Value("${spring.mail.username}")
-    private String fromEmail;
+    @Autowired
+    private EmailService emailService;
 
     @Value("${app.base-url:http://localhost:4200}")
     private String frontendUrl;
 
-    @Autowired
-    private JavaMailSender mailSender;
+    // ============================================================================
+    //  API PUBLICA
+    // ============================================================================
 
     /**
-     * Enviar email de reset de contraseña
+     * Envia el enlace de restablecimiento de contrasena al usuario.
+     *
+     * @return true si el envio fue exitoso, false en caso contrario.
      */
     public boolean sendPasswordResetEmail(User user, String token) {
         try {
-            String resetLink = frontendUrl + "/reset-password?token=" + token;
-            String subject = "🔐 Restablece tu contraseña - Sistema de Login";
-            String htmlContent = buildPasswordResetEmailContent(user, resetLink);
-            return sendHtmlEmail(user.getEmail(), subject, htmlContent);
+            emailService.sendPasswordResetEmail(user, token);
+            logger.info("Email de reset enviado a: {}", LogSanitizer.maskEmail(user.getEmail()));
+            return true;
         } catch (Exception e) {
-            System.err.println("Error enviando email de reset: " + e.getMessage());
+            logger.error("Error enviando email de reset a {}: {}",
+                    LogSanitizer.maskEmail(user.getEmail()), e.getMessage());
             return false;
         }
     }
 
     /**
-     * Enviar notificación de contraseña cambiada
+     * Envia una notificacion de confirmacion cuando la contrasena ha sido cambiada.
+     *
+     * @return true si el envio fue exitoso, false en caso contrario.
      */
     public boolean sendPasswordChangedNotification(User user) {
         try {
-            String subject = "✅ Contraseña actualizada - Sistema de Login";
-            String htmlContent = buildPasswordChangedEmailContent(user);
-
-            return sendHtmlEmail(user.getEmail(), subject, htmlContent);
-
-        } catch (Exception e) {
-            System.err.println("Error enviando notificación de cambio: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Método privado para enviar emails HTML
-     */
-    public boolean sendHtmlEmail(String to, String subject, String htmlContent) {
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            mailSender.send(message);
+            String subject = "Contrasena actualizada - AuthSystem";
+            String html    = buildPasswordChangedTemplate(user);
+            emailService.sendHtmlEmail(user.getEmail(), subject, html);
+            logger.info("Notificacion de cambio de contrasena enviada a: {}",
+                    LogSanitizer.maskEmail(user.getEmail()));
             return true;
         } catch (Exception e) {
-            System.err.println("Error enviando email HTML: " + e.getMessage());
+            logger.error("Error enviando notificacion de cambio de contrasena a {}: {}",
+                    LogSanitizer.maskEmail(user.getEmail()), e.getMessage());
             return false;
         }
     }
 
-    /**
-     * Construir contenido HTML para email de reset
-     */
-    private String buildPasswordResetEmailContent(User user, String resetLink) {
-        return """
-                    <html>
-                    <body>
-                        <h2>Solicitud de restablecimiento de contraseña</h2>
-                        <p>Hola %s,</p>
-                        <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
-                        <a href="%s">Restablecer contraseña</a>
-                        <p>Si no solicitaste este cambio, ignora este mensaje.</p>
-                    </body>
-                    </html>
-                """.formatted(user.getFirstName(), resetLink);
-    }
+    // ============================================================================
+    //  TEMPLATE HTML
+    // ============================================================================
 
-    /**
-     * Construir contenido HTML para notificación de contraseña cambiada
-     */
-    private String buildPasswordChangedEmailContent(User user) {
-        String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+    private String buildPasswordChangedTemplate(User user) {
+        String currentDate = LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
 
-        return String.format(
-                """
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <meta charset="UTF-8">
-                            <style>
-                                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-                                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                                .header { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-                                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
-                                .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 20px 0; color: #155724; }
-                            </style>
-                        </head>
-                        <body>
-                            <div class="container">
-                                <div class="header">
-                                    <h1>✅ Contraseña Actualizada</h1>
-                                </div>
-                                <div class="content">
-                                    <h2>Hola %s,</h2>
-                                    <div class="success">
-                                        <p><strong>¡Tu contraseña ha sido actualizada exitosamente!</strong></p>
-                                    </div>
-                                    <p>Tu contraseña se cambió el <strong>%s</strong>.</p>
-                                    <p>Si no fuiste tú quien realizó este cambio, contacta inmediatamente con soporte.</p>
-                                    <p>Por tu seguridad, te recomendamos:</p>
-                                    <ul>
-                                        <li>Usar una contraseña única y segura</li>
-                                        <li>No compartir tus credenciales</li>
-                                        <li>Cerrar sesión en dispositivos que no uses</li>
-                                    </ul>
-                                </div>
-                                <div class="footer">
-                                    <p>Este email fue enviado automáticamente. No respondas a este mensaje.</p>
-                                    <p>© 2024 Sistema de Login. Todos los derechos reservados.</p>
-                                </div>
-                            </div>
-                        </body>
-                        </html>
-                        """,
-                user.getFirstName(), currentDate);
+        return "<!DOCTYPE html>" +
+               "<html lang=\"es\">" +
+               "<head><meta charset=\"UTF-8\">" +
+               "<style>" +
+               "body{margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif;}" +
+               ".container{max-width:600px;margin:40px auto;background:#fff;border-radius:8px;" +
+               "overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);}" +
+               ".header{background:#28a745;color:#fff;padding:28px 20px;text-align:center;}" +
+               ".header h1{margin:0;font-size:22px;}" +
+               ".content{padding:32px 28px;color:#333;}" +
+               ".success{background:#d4edda;border-left:4px solid #28a745;padding:14px 16px;" +
+               "border-radius:4px;color:#155724;margin:16px 0;}" +
+               ".footer{padding:16px 28px;font-size:12px;color:#888;border-top:1px solid #eee;text-align:center;}" +
+               "</style></head><body>" +
+               "<div class=\"container\">" +
+               "<div class=\"header\"><h1>Contrasena actualizada</h1></div>" +
+               "<div class=\"content\">" +
+               "<h2>Hola, " + user.getFirstName() + "</h2>" +
+               "<div class=\"success\"><strong>Tu contrasena fue actualizada exitosamente el " + currentDate + ".</strong></div>" +
+               "<p>Si no fuiste tu quien realizo este cambio, contacta a soporte de inmediato.</p>" +
+               "<ul>" +
+               "<li>Usa una contrasena unica para cada servicio.</li>" +
+               "<li>No compartas tus credenciales con nadie.</li>" +
+               "<li>Cierra sesion en dispositivos que no utilices.</li>" +
+               "</ul>" +
+               "</div>" +
+               "<div class=\"footer\">&copy; 2025 AuthSystem &middot; Este mensaje fue generado automaticamente.</div>" +
+               "</div></body></html>";
     }
 }

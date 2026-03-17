@@ -4,19 +4,16 @@ import com.security.dto.request.RegisterRequest;
 import com.security.dto.response.UserResponse;
 import com.security.entity.Role;
 import com.security.entity.User;
-///agregue
 import com.security.entity.VerificationToken;
-
-//
 import com.security.enums.TokenType;
-
 import com.security.exception.ResourceNotFoundException;
 import com.security.exception.BadRequestException;
 import com.security.repository.RoleRepository;
 import com.security.repository.UserRepository;
-//esto
 import com.security.repository.VerificationTokenRepository;
-
+import com.security.util.LogSanitizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,16 +21,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class UserService {
+    private static final Logger logger = LoggerFactory.getLogger(UserService.class);
 
     @Autowired
     private UserRepository userRepository;
@@ -97,50 +95,40 @@ public class UserService {
         // Enviar email de verificación
         try {
             emailService.sendVerificationEmail(savedUser, tokenValue);
-
-            System.out.println("✅ Email de verificación enviado a: " + savedUser.getEmail());
-            /*
-             * System.out.println("🔥 DEBUG: Email enviado desde UserService a: " +
-             * savedUser.getEmail());
-             * System.out.println("🔥 DEBUG: Token generado: " + tokenValue);
-             */
+            logger.info("Email de verificacion enviado a: {}",
+                    LogSanitizer.maskEmail(savedUser.getEmail()));
         } catch (Exception e) {
-            System.err.println("❌ Error enviando email de verificación: " + e.getMessage());
+            logger.error("Error enviando email de verificacion a {}: {}",
+                    LogSanitizer.maskEmail(savedUser.getEmail()), e.getMessage());
             // No fallar el registro, solo log del error
-            e.printStackTrace();
         }
 
         return savedUser;
     }
 
     public boolean verifyEmailToken(String token) {
-        System.out.println("🔍 Verificando token: " + token);
+        logger.debug("Verificando token de email");
 
         Optional<VerificationToken> verificationTokenOpt = verificationTokenRepository
                 .findValidToken(token, LocalDateTime.now());
 
         if (verificationTokenOpt.isEmpty()) {
-            System.out.println("❌ Token inválido o expirado: " + token);
+            logger.warn("Token de verificacion invalido o expirado");
             throw new BadRequestException("Token de verificación inválido o expirado");
         }
 
         VerificationToken verificationToken = verificationTokenOpt.get();
         User user = verificationToken.getUser();
 
-        System.out.println("✅ Token válido encontrado para usuario: " + user.getEmail());
-        System.out.println("🔄 Estado anterior - Enabled: " + user.getEnabled());
-
         // Activar usuario
         user.setEnabled(true);
         user.setUpdatedAt(LocalDateTime.now());
-        User savedUser = userRepository.save(user);
-
-        System.out.println("✅ Usuario habilitado - Nuevo estado Enabled: " + savedUser.getEnabled());
+        userRepository.save(user);
 
         // Marcar token como usado
         verificationTokenRepository.markTokenAsUsed(verificationToken.getId());
 
-        System.out.println("✅ Verificación completada exitosamente para: " + user.getEmail());
+        logger.info("Verificacion completada para: {}", LogSanitizer.maskEmail(user.getEmail()));
 
         return true;
     }
@@ -169,16 +157,29 @@ public class UserService {
         // Enviar email
         try {
             emailService.sendVerificationEmail(user, tokenValue);
-            System.out.println("✅ Email de verificación reenviado a: " + user.getEmail());
+            logger.info("Email de verificacion reenviado a: {}",
+                    LogSanitizer.maskEmail(user.getEmail()));
         } catch (Exception e) {
-            System.err.println("❌ Error reenviando email: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Error reenviando email a {}: {}",
+                    LogSanitizer.maskEmail(user.getEmail()), e.getMessage());
             throw new RuntimeException("Error enviando email de verificación");
         }
     }
 
+    private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
+    private static final String TOKEN_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+    /**
+     * Genera un token de verificacion de 32 caracteres alfanumericos aleatorios.
+     * UUID.randomUUID().substring(0,8) es inseguro (solo 4 bytes de entropía).
+     */
     private String generateVerificationToken() {
-        return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        StringBuilder sb = new StringBuilder(32);
+        for (int i = 0; i < 32; i++) {
+            sb.append(TOKEN_CHARS.charAt(TOKEN_RANDOM.nextInt(TOKEN_CHARS.length())));
+        }
+        return sb.toString();
     }
 
     ///////////////////////

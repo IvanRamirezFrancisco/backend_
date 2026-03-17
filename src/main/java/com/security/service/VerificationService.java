@@ -4,6 +4,9 @@ import com.security.entity.User;
 import com.security.entity.VerificationToken;
 import com.security.enums.TokenType;
 import com.security.repository.VerificationTokenRepository;
+import com.security.util.LogSanitizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,8 @@ import java.util.Optional;
 @Service
 @Transactional
 public class VerificationService {
+
+    private static final Logger logger = LoggerFactory.getLogger(VerificationService.class);
 
     @Autowired
     private VerificationTokenRepository verificationTokenRepository;
@@ -70,12 +75,11 @@ public class VerificationService {
 
             // Mark token as used
             verificationTokenRepository.markTokenAsUsed(verificationToken.getId());
-
-            System.out.println("✅ Usuario verificado: " + user.getEmail());
+            logger.info("Usuario verificado: {}", LogSanitizer.maskEmail(user.getEmail()));
             return true;
         }
 
-        System.out.println("❌ Token inválido o expirado: " + token);
+        logger.warn("Token de verificacion invalido o expirado");
         return false;
     }
 
@@ -97,7 +101,7 @@ public class VerificationService {
 
     public void cleanupExpiredTokens() {
         verificationTokenRepository.deleteExpiredTokens(LocalDateTime.now());
-        System.out.println("🧹 Tokens expirados eliminados");
+        logger.info("Tokens de verificacion expirados eliminados");
     }
 
     public boolean hasValidVerificationToken(User user) {

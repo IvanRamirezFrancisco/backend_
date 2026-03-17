@@ -8,15 +8,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class TwoFactorService {
+    private static final Logger logger = LoggerFactory.getLogger(TwoFactorService.class);
 
     @Autowired
     private UserService userService;
@@ -82,7 +87,7 @@ public class TwoFactorService {
                 System.out.println("  ✅ Secret guardado en BD con repositorio directo");
 
             } catch (Exception saveException) {
-                System.err.println("❌ Error guardando en BD: " + saveException.getMessage());
+                logger.error("❌ Error guardando en BD: " + saveException.getMessage());
                 saveException.printStackTrace();
                 throw new RuntimeException("Error guardando configuración: " + saveException.getMessage());
             }
@@ -103,7 +108,7 @@ public class TwoFactorService {
             return result;
 
         } catch (Exception e) {
-            System.err.println("❌ Error en setup: " + e.getMessage());
+            logger.error("❌ Error en setup: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Error configurando Google Authenticator: " + e.getMessage());
         }
@@ -125,7 +130,7 @@ public class TwoFactorService {
             return secret;
 
         } catch (Exception e) {
-            System.err.println("❌ Error habilitando: " + e.getMessage());
+            logger.error("❌ Error habilitando: " + e.getMessage());
             throw new RuntimeException("Error habilitando Google Authenticator: " + e.getMessage());
         }
     }
@@ -159,7 +164,7 @@ public class TwoFactorService {
 
             return qrCodeBase64;
         } catch (Exception e) {
-            System.err.println("❌ ERROR generando QR code para user " + userId + ": " + e.getMessage());
+            logger.error("❌ ERROR generando QR code para user " + userId + ": " + e.getMessage());
             throw new RuntimeException("Error generating QR code: " + e.getMessage(), e);
         }
     }
@@ -195,7 +200,7 @@ public class TwoFactorService {
                     System.out.println("  ✅ Google Auth ACTIVADO con repositorio directo");
                     return true;
                 } catch (Exception saveError) {
-                    System.err.println("❌ Error guardando activación: " + saveError.getMessage());
+                    logger.error("❌ Error guardando activación: " + saveError.getMessage());
                     throw new RuntimeException("Error activando Google Authenticator: " + saveError.getMessage());
                 }
             } else {
@@ -204,7 +209,7 @@ public class TwoFactorService {
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Error confirmando: " + e.getMessage());
+            logger.error("❌ Error confirmando: " + e.getMessage());
             throw new RuntimeException("Error confirmando Google Authenticator: " + e.getMessage());
         }
     }
@@ -216,7 +221,7 @@ public class TwoFactorService {
         User user = userService.getUserById(userId);
 
         if (user.getGoogleAuthSecret() == null || !user.getGoogleAuthEnabled()) {
-            System.err.println("❌ Google Authenticator not enabled for user " + userId);
+            logger.error("❌ Google Authenticator not enabled for user {}", userId);
             return false;
         }
 
@@ -585,7 +590,7 @@ public class TwoFactorService {
             return validation;
 
         } catch (Exception e) {
-            System.err.println("❌ Error en validación completa: " + e.getMessage());
+            logger.error("❌ Error en validación completa: " + e.getMessage());
             throw new RuntimeException("Error validating TOTP flow: " + e.getMessage(), e);
         }
     }

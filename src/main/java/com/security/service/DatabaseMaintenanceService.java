@@ -1,6 +1,7 @@
 package com.security.service;
 
 import com.security.dto.admin.TableMaintenanceDto;
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -116,9 +117,9 @@ public class DatabaseMaintenanceService {
      */
     public void runVacuum(String tableName) {
         sanitize(tableName);
-        log.info("[Maintenance] Iniciando VACUUM ANALYZE en tabla '{}'...", tableName);
+        log.info("[Maintenance] Iniciando VACUUM ANALYZE en tabla '{}'...", LogSanitizer.sanitize(tableName));
         jdbc.execute("VACUUM ANALYZE " + tableName + ";");
-        log.info("[Maintenance] VACUUM ANALYZE completado en tabla '{}'", tableName);
+        log.info("[Maintenance] VACUUM ANALYZE completado en tabla '{}'", LogSanitizer.sanitize(tableName));
     }
 
     /**
@@ -144,9 +145,9 @@ public class DatabaseMaintenanceService {
      */
     public void runReindex(String tableName) {
         sanitize(tableName);
-        log.info("[Maintenance] Iniciando REINDEX TABLE '{}' manual...", tableName);
+        log.info("[Maintenance] Iniciando REINDEX TABLE '{}' manual...", LogSanitizer.sanitize(tableName));
         jdbc.execute("REINDEX TABLE " + tableName + ";");
-        log.info("[Maintenance] REINDEX TABLE '{}' completado exitosamente", tableName);
+        log.info("[Maintenance] REINDEX TABLE '{}' completado exitosamente", LogSanitizer.sanitize(tableName));
     }
 
     // ── Utilidades privadas ───────────────────────────────────────────────────

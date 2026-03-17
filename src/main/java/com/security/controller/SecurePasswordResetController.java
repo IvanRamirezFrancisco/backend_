@@ -4,6 +4,7 @@ import com.security.service.SecurePasswordResetService;
 import com.security.dto.request.PasswordResetRequest;
 import com.security.dto.request.ResetPasswordRequest;
 import com.security.dto.response.ApiResponse;
+import com.security.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -40,7 +41,7 @@ public class SecurePasswordResetController {
             String userAgent = httpRequest.getHeader("User-Agent");
 
             logger.info("Password reset request from IP: {} for email pattern: {}",
-                    clientIp, maskEmailForLogging(request.getEmail()));
+                    LogSanitizer.sanitize(clientIp), LogSanitizer.maskEmail(request.getEmail()));
 
             passwordResetService.requestPasswordResetFromController(
                     request.getEmail(),
@@ -105,7 +106,7 @@ public class SecurePasswordResetController {
             String userAgent = httpRequest.getHeader("User-Agent");
 
             logger.info("Password reset confirmation from IP: {} with token: {}",
-                    clientIp, request.getToken().substring(0, 8) + "...");
+                    LogSanitizer.sanitize(clientIp), LogSanitizer.maskToken(request.getToken()));
 
             boolean result = passwordResetService.resetPasswordFromController(
                     request.getToken(),

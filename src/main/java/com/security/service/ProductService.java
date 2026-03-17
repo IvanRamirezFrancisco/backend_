@@ -13,6 +13,7 @@ import com.security.repository.CategoryRepository;
 import com.security.repository.ProductAttributeRepository;
 import com.security.repository.ProductImageRepository;
 import com.security.repository.ProductRepository;
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,7 +79,7 @@ public class ProductService {
      */
     public ProductDTO createProduct(ProductDTO productDTO) {
         logger.info("=== INICIANDO CREACIÓN DE PRODUCTO ===");
-        logger.info("Nombre del producto: {}", productDTO.getName());
+        logger.info("Nombre del producto: {}", LogSanitizer.sanitize(productDTO.getName()));
         logger.info("Custom Attributes recibidos: {}",
                 productDTO.getCustomAttributes() != null ? productDTO.getCustomAttributes().size() : 0);
 
@@ -86,7 +87,8 @@ public class ProductService {
             logger.info("Detalles de los atributos:");
             for (int i = 0; i < productDTO.getCustomAttributes().size(); i++) {
                 ProductAttributeDTO attr = productDTO.getCustomAttributes().get(i);
-                logger.info("  Atributo {}: key='{}', value='{}'", i, attr.getKey(), attr.getValue());
+                logger.info("  Atributo {}: key='{}', value='{}'", i,
+                        LogSanitizer.sanitize(attr.getKey()), LogSanitizer.sanitize(attr.getValue()));
             }
         }
 
@@ -408,7 +410,8 @@ public class ProductService {
 
         for (ProductAttributeDTO attributeDTO : attributeDTOs) {
             logger.info(">>> Procesando atributo: key='{}', value='{}'",
-                    attributeDTO.getKey(), attributeDTO.getValue());
+                    LogSanitizer.sanitize(attributeDTO.getKey()),
+                    LogSanitizer.sanitize(attributeDTO.getValue()));
 
             // Validar que no estén vacíos
             if (attributeDTO.getKey() != null && !attributeDTO.getKey().trim().isEmpty()
@@ -422,8 +425,8 @@ public class ProductService {
                         attributeDTO.getDisplayOrder() != null ? attributeDTO.getDisplayOrder() : order++);
 
                 logger.info(">>> Guardando atributo en BD: name='{}', value='{}', order={}",
-                        attribute.getAttributeName(),
-                        attribute.getAttributeValue(),
+                        LogSanitizer.sanitize(attribute.getAttributeName()),
+                        LogSanitizer.sanitize(attribute.getAttributeValue()),
                         attribute.getDisplayOrder());
 
                 ProductAttribute saved = productAttributeRepository.save(attribute);
@@ -432,7 +435,8 @@ public class ProductService {
                 logger.info(">>> Atributo guardado con ID: {}", saved.getId());
             } else {
                 logger.warn(">>> Atributo ignorado (vacío): key='{}', value='{}'",
-                        attributeDTO.getKey(), attributeDTO.getValue());
+                        LogSanitizer.sanitize(attributeDTO.getKey()),
+                        LogSanitizer.sanitize(attributeDTO.getValue()));
             }
         }
 

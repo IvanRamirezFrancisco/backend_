@@ -7,14 +7,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 @Transactional
 public class BackupCodeService {
+    private static final Logger logger = LoggerFactory.getLogger(BackupCodeService.class);
 
     @Autowired
     private BackupCodeRepository backupCodeRepository;
@@ -79,7 +84,7 @@ public class BackupCodeService {
             return plainCodes;
 
         } catch (Exception e) {
-            System.err.println("❌ Error generando backup codes: " + e.getMessage());
+            logger.error("❌ Error generando backup codes: " + e.getMessage());
             throw new RuntimeException("Error generating backup codes: " + e.getMessage(), e);
         }
     }
@@ -131,7 +136,7 @@ public class BackupCodeService {
             return false;
 
         } catch (Exception e) {
-            System.err.println("❌ Error verificando backup code: " + e.getMessage());
+            logger.error("❌ Error verificando backup code: " + e.getMessage());
             return false;
         }
     }

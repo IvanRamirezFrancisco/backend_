@@ -1,5 +1,6 @@
 package com.security.controller;
 
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -93,9 +94,9 @@ public class FileUploadController {
             return ResponseEntity.ok(response);
 
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Error al guardar el archivo subido", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Error al guardar el archivo: " + e.getMessage()));
+                    .body(Map.of("error", "Error al guardar el archivo"));
         }
     }
 
@@ -114,7 +115,9 @@ public class FileUploadController {
             MultipartFile file = files[i];
 
             logger.info("  📄 Procesando archivo {}/{}: {} ({} bytes)",
-                    i + 1, files.length, file.getOriginalFilename(), file.getSize());
+                    i + 1, files.length,
+                    LogSanitizer.sanitizeFilename(file.getOriginalFilename()),
+                    file.getSize());
 
             try {
                 // Validar archivo
@@ -214,7 +217,8 @@ public class FileUploadController {
                     "filename", filename));
 
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Error al eliminar el archivo {}: {}",
+                    LogSanitizer.sanitizeFilename(filename), e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Error al eliminar el archivo: " + e.getMessage()));
         }

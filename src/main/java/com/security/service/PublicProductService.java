@@ -147,10 +147,10 @@ public class PublicProductService {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
         Sort sort = switch (sortBy == null ? "" : sortBy.trim().toLowerCase()) {
-            case "price_asc"  -> Sort.by("price").ascending();
+            case "price_asc" -> Sort.by("price").ascending();
             case "price_desc" -> Sort.by("price").descending();
-            case "name_asc"   -> Sort.by("name").ascending();
-            default           -> Sort.by("featured").descending().and(Sort.by("createdAt").descending());
+            case "name_asc" -> Sort.by("name").ascending();
+            default -> Sort.by("featured").descending().and(Sort.by("createdAt").descending());
         };
         return PageRequest.of(safePage, safeSize, sort);
     }

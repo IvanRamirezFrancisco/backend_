@@ -7,37 +7,35 @@ import com.security.dto.request.VerifyEmailRequest;
 import com.security.dto.response.ApiResponse;
 import com.security.dto.response.JwtAuthResponse;
 import com.security.dto.response.UserResponse;
+import com.security.entity.User;
+import com.security.security.JwtTokenProvider;
 import com.security.service.AuthService;
-import com.security.service.VerificationService;
-import com.security.service.UserService;
-import com.security.service.PasswordResetService;
 import com.security.service.LoginSecurityService;
+import com.security.service.PasswordResetService;
 import com.security.service.SessionManagementService;
-
-import java.util.Map;
-
+import com.security.service.UserService;
+import com.security.service.VerificationService;
+import com.security.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import java.net.URI;
-
-import com.security.entity.User;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.security.security.JwtTokenProvider;
+import org.springframework.web.bind.annotation.*;
 
-import org.springframework.http.ResponseEntity;
-
+import java.net.URI;
 import java.util.HashMap;
-
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
 // CORS se maneja globalmente en SecurityConfig
 public class AuthController {
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
 
     @Autowired
     private AuthService authService;
@@ -307,11 +305,11 @@ public class AuthController {
             return ResponseEntity
                     .ok(new ApiResponse(true, "¡Email verificado exitosamente! Ya puedes iniciar sesión."));
         } catch (IllegalArgumentException e) {
-            System.err.println("❌ Token inválido: " + e.getMessage());
+            logger.error("❌ Token inválido: " + e.getMessage());
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "El enlace de verificación es inválido o ha expirado."));
         } catch (Exception e) {
-            System.err.println("❌ Error verificando email: " + e.getMessage());
+            logger.error("❌ Error verificando email: " + e.getMessage());
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Error al verificar el email. Por favor intenta nuevamente."));
         }

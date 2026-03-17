@@ -2,6 +2,7 @@ package com.security.controller.admin;
 
 import com.security.dto.admin.TableMaintenanceDto;
 import com.security.service.DatabaseMaintenanceService;
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -73,7 +74,7 @@ public class AdminDbMaintenanceController {
      */
     @PostMapping("/vacuum/{tableName}")
     public ResponseEntity<Map<String, Object>> runVacuum(@PathVariable String tableName) {
-        log.info("[Admin] Ejecutando VACUUM ANALYZE en tabla '{}'...", tableName);
+        log.info("[Admin] Ejecutando VACUUM ANALYZE en tabla '{}'...", LogSanitizer.sanitize(tableName));
         maintenanceService.runVacuum(tableName);
         return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -96,7 +97,7 @@ public class AdminDbMaintenanceController {
      */
     @PostMapping("/reindex/{tableName}")
     public ResponseEntity<Map<String, Object>> runReindex(@PathVariable String tableName) {
-        log.info("[Admin] Ejecutando REINDEX TABLE '{}' manual...", tableName);
+        log.info("[Admin] Ejecutando REINDEX TABLE '{}' manual...", LogSanitizer.sanitize(tableName));
         maintenanceService.runReindex(tableName);
         return ResponseEntity.ok(Map.of(
                 "success", true,

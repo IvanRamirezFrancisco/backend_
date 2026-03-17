@@ -4,6 +4,8 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
@@ -18,6 +20,8 @@ import java.util.stream.Collectors;
 
 @Component
 public class JwtTokenProvider {
+
+    private static final Logger logger = LoggerFactory.getLogger(JwtTokenProvider.class);
 
     @Value("${app.security.jwt.secret:mySecretKey12345678901234567890123456789012345678901234567890}")
     private String jwtSecret;
@@ -133,30 +137,28 @@ public class JwtTokenProvider {
 
             String jti = claims.getId();
 
-            // Si tiene JTI, verificar que la sesión esté activa
+            // Si tiene JTI, verificar que la sesión esté activa en BD.
+            // La actualización de actividad la gestiona JwtAuthenticationFilter
+            // para evitar doble escritura por request.
             if (jti != null && !sessionManagementService.isSessionValid(jti)) {
-                System.err.println("Sesión invalidada o expirada: " + jti);
+                logger.warn("Sesion invalidada o expirada para JTI: {}...",
+                        jti.length() > 8 ? jti.substring(0, 8) : jti);
                 return false;
-            }
-
-            // Si tiene JTI válido, actualizar actividad de la sesión
-            if (jti != null) {
-                sessionManagementService.updateSessionActivity(jti);
             }
 
             return true;
         } catch (SecurityException ex) {
-            System.err.println("Invalid JWT signature");
+            logger.warn("JWT: firma invalida");
         } catch (MalformedJwtException ex) {
-            System.err.println("Invalid JWT token");
+            logger.warn("JWT: token malformado");
         } catch (ExpiredJwtException ex) {
-            System.err.println("Expired JWT token");
+            logger.warn("JWT: token expirado");
         } catch (UnsupportedJwtException ex) {
-            System.err.println("Unsupported JWT token");
+            logger.warn("JWT: tipo de token no soportado");
         } catch (IllegalArgumentException ex) {
-            System.err.println("JWT claims string is empty");
+            logger.warn("JWT: claims vacios o nulos");
         } catch (Exception ex) {
-            System.err.println("Error validating session: " + ex.getMessage());
+            logger.error("JWT: error inesperado al validar sesion");
         }
         return false;
     }

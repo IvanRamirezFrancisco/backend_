@@ -7,12 +7,15 @@ import com.security.exception.RateLimitExceededException;
 import com.security.repository.PasswordResetTokenRepository;
 import com.security.repository.PasswordRecoveryAttemptRepository;
 import com.security.repository.UserRepository;
+import com.security.util.LogSanitizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
@@ -24,6 +27,7 @@ import java.util.Optional;
 @Service
 @Transactional
 public class PasswordResetService {
+    private static final Logger logger = LoggerFactory.getLogger(PasswordResetService.class);
 
     @Autowired
     private UserRepository userRepository;
@@ -69,7 +73,8 @@ public class PasswordResetService {
                 // Por seguridad, no revelamos si el email existe o no
                 // REGISTRAR INTENTO para emails no existentes (rate limiting por IP)
                 recordAttempt(email, ipAddress, false);
-                System.out.println("🔍 Solicitud de reset para email no registrado: " + email);
+                logger.debug("Solicitud de reset para email no registrado desde IP: {}",
+                        LogSanitizer.sanitize(ipAddress));
 
                 // Simular el mismo tiempo de procesamiento
                 Thread.sleep(100 + secureRandom.nextInt(200)); // 100-300ms aleatorio
@@ -78,7 +83,8 @@ public class PasswordResetService {
 
             // 3️⃣ REGISTRAR EL INTENTO para usuarios reales (rate limiting por email)
             recordAttempt(email, ipAddress, false);
-            System.out.println("📊 Intento registrado para usuario real: " + email + " desde IP: " + ipAddress);
+            logger.debug("Intento de reset registrado para: {} desde IP: {}",
+                    LogSanitizer.maskEmail(email), LogSanitizer.sanitize(ipAddress));
 
             User user = userOpt.get();
 
@@ -95,23 +101,23 @@ public class PasswordResetService {
             // 7️⃣ Enviar email usando el servicio con Brevo API
             try {
                 emailService.sendPasswordResetEmail(user, token);
-                System.out.println("✅ Token de reset generado y email enviado para: " + email);
+                logger.info("Email de reset enviado para: {}", LogSanitizer.maskEmail(email));
                 // NOTA: NO limpiamos intentos aquí, solo cuando se cambie la contraseña
                 // exitosamente
 
             } catch (Exception emailError) {
-                System.err.println(
-                        "❌ Token generado pero error enviando email para: " + email + " - " + emailError.getMessage());
+                logger.error("Token generado pero error enviando email para {}: {}",
+                        LogSanitizer.maskEmail(email), emailError.getMessage());
                 // El intento ya está registrado, no agregamos otro
             }
 
         } catch (RateLimitExceededException e) {
             // Excepción de rate limiting - relanzar para manejo en controller
-            System.err.println(
-                    "⛔ Rate limit excedido para: " + email + " desde IP: " + ipAddress + " - " + e.getMessage());
+            logger.warn("Rate limit excedido para: {} desde IP: {}",
+                    LogSanitizer.maskEmail(email), LogSanitizer.sanitize(ipAddress));
             throw e;
         } catch (Exception e) {
-            System.err.println("❌ Error al procesar solicitud de reset: " + e.getMessage());
+            logger.error("Error al procesar solicitud de reset: {}", e.getMessage());
             // NO registrar intento adicional si hay error después de verificaciones
         }
     }
@@ -128,7 +134,7 @@ public class PasswordResetService {
             Optional<PasswordResetToken> resetTokenOpt = passwordResetTokenRepository.findByTokenAndUsedFalse(token);
 
             if (resetTokenOpt.isEmpty()) {
-                System.out.println("Token no encontrado o ya usado: " + token);
+                logger.debug("Token no encontrado o ya usado");
                 return false;
             }
 
@@ -136,15 +142,14 @@ public class PasswordResetService {
             boolean isExpired = resetToken.isExpired();
 
             if (isExpired) {
-                System.out.println("Token expirado: " + token);
+                logger.debug("Token de reset expirado");
                 return false;
             }
 
-            System.out.println("Token válido: " + token);
             return true;
 
         } catch (Exception e) {
-            System.err.println("Error validando token: " + e.getMessage());
+            logger.error("Error validando token: {}", e.getMessage());
             return false;
         }
     }
@@ -156,12 +161,12 @@ public class PasswordResetService {
         try {
             // 1. Validar parámetros
             if (token == null || token.trim().isEmpty()) {
-                System.err.println("Token vacío o nulo");
+                logger.error("Token vacío o nulo");
                 return false;
             }
 
             if (newPassword == null || newPassword.trim().length() < 8) {
-                System.err.println("Contraseña inválida");
+                logger.error("Contraseña inválida");
                 return false;
             }
 
@@ -169,7 +174,7 @@ public class PasswordResetService {
             Optional<PasswordResetToken> resetTokenOpt = passwordResetTokenRepository.findByTokenAndUsedFalse(token);
 
             if (resetTokenOpt.isEmpty()) {
-                System.err.println("Token no encontrado o ya usado");
+                logger.error("Token no encontrado o ya usado");
                 return false;
             }
 
@@ -177,7 +182,7 @@ public class PasswordResetService {
 
             // 3. Verificar que no haya expirado
             if (resetToken.isExpired()) {
-                System.err.println("Token expirado");
+                logger.error("Token expirado");
                 return false;
             }
 
@@ -198,17 +203,17 @@ public class PasswordResetService {
             try {
                 // Note: We could implement a password changed notification method in
                 // EmailService if needed
-                System.out.println("Contraseña actualizada exitosamente para: " + user.getEmail());
+                logger.info("Contraseña actualizada exitosamente para: {}",
+                        LogSanitizer.maskEmail(user.getEmail()));
             } catch (Exception emailError) {
-                System.err.println("Contraseña actualizada pero error enviando notificación para: " + user.getEmail()
-                        + " - " + emailError.getMessage());
+                logger.error("Contraseña actualizada pero error enviando notificacion para {}: {}",
+                        LogSanitizer.maskEmail(user.getEmail()), emailError.getMessage());
             }
 
             return true;
 
         } catch (Exception e) {
-            System.err.println("Error al resetear contraseña: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Error al resetear contraseña: {}", e.getMessage());
             return false;
         }
     }
@@ -235,7 +240,7 @@ public class PasswordResetService {
 
             return Optional.empty();
         } catch (Exception e) {
-            System.err.println("Error obteniendo usuario por token: " + e.getMessage());
+            logger.error("Error obteniendo usuario por token: " + e.getMessage());
             return Optional.empty();
         }
     }
@@ -246,9 +251,9 @@ public class PasswordResetService {
     public void cleanupExpiredTokens() {
         try {
             passwordResetTokenRepository.deleteExpiredTokens(LocalDateTime.now());
-            System.out.println("Tokens expirados limpiados correctamente");
+            logger.info("Tokens expirados limpiados correctamente");
         } catch (Exception e) {
-            System.err.println("Error limpiando tokens expirados: " + e.getMessage());
+            logger.error("Error limpiando tokens expirados: " + e.getMessage());
         }
     }
 
@@ -265,7 +270,7 @@ public class PasswordResetService {
             }
             return 0;
         } catch (Exception e) {
-            System.err.println("Error contando tokens activos: " + e.getMessage());
+            logger.error("Error contando tokens activos: " + e.getMessage());
             return 0;
         }
     }
@@ -310,7 +315,8 @@ public class PasswordResetService {
 
             // Verificar si el bloqueo ya expiró y auto-resetearlo
             if (attempt.isBlocked() && attempt.isBlockExpired()) {
-                System.out.println("🔄 Auto-reseteando bloqueo expirado para usuario: " + email);
+                logger.debug("Auto-reseteando bloqueo expirado para usuario: {}",
+                        LogSanitizer.maskEmail(email));
                 attempt.resetIfExpired();
                 passwordRecoveryAttemptRepository.save(attempt);
                 return; // Usuario desbloqueado, puede continuar
@@ -352,7 +358,8 @@ public class PasswordResetService {
 
             // Verificar si el bloqueo ya expiró
             if (attempt.isBlocked() && attempt.isBlockExpired()) {
-                System.out.println("🔄 Auto-reseteando bloqueo expirado para IP: " + clientIp);
+                logger.debug("Auto-reseteando bloqueo expirado para IP: {}",
+                        LogSanitizer.sanitize(clientIp));
                 attempt.resetIfExpired();
                 passwordRecoveryAttemptRepository.save(attempt);
                 return;
@@ -402,7 +409,7 @@ public class PasswordResetService {
             }
 
         } catch (Exception e) {
-            System.err.println("Error registrando intento de recuperación: " + e.getMessage());
+            logger.error("Error registrando intento de recuperación: " + e.getMessage());
         }
     }
 
@@ -421,7 +428,8 @@ public class PasswordResetService {
             // ✅ IMPORTANTE: Si ya está bloqueado, NO incrementar más el contador
             // Esto evita que el bloqueo se extienda con intentos adicionales
             if (attempt.isCurrentlyBlocked()) {
-                System.out.println("⚠️ Intento durante bloqueo activo (no incrementado) para: " + email);
+                logger.debug("Intento durante bloqueo activo ignorado para: {}",
+                        LogSanitizer.maskEmail(email));
                 return; // No incrementar, mantener bloqueo fijo
             }
 
@@ -432,8 +440,8 @@ public class PasswordResetService {
             // Aplicar bloqueo si excede el límite
             if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
                 attempt.applyProgressiveBlock();
-                System.out.println("🚫 Usuario bloqueado por exceder " + MAX_ATTEMPTS +
-                        " intentos: " + email + " (persistente entre IPs)");
+                logger.warn("Usuario bloqueado por exceder {} intentos: {}",
+                        MAX_ATTEMPTS, LogSanitizer.maskEmail(email));
             }
         } else {
             // Crear nuevo registro para este email
@@ -447,8 +455,9 @@ public class PasswordResetService {
         }
 
         passwordRecoveryAttemptRepository.save(attempt);
-        System.out.println("📊 Intento #" + attempt.getAttemptCount() +
-                " registrado para usuario: " + email + " desde IP: " + clientIp);
+        logger.debug("Intento #{} registrado para: {} desde IP: {}",
+                attempt.getAttemptCount(), LogSanitizer.maskEmail(email),
+                LogSanitizer.sanitize(clientIp));
     }
 
     /**
@@ -465,7 +474,8 @@ public class PasswordResetService {
 
             // ✅ IMPORTANTE: Si ya está bloqueado, NO incrementar más el contador
             if (attempt.isCurrentlyBlocked()) {
-                System.out.println("⚠️ Intento durante bloqueo activo (no incrementado) para IP: " + clientIp);
+                logger.debug("Intento durante bloqueo activo ignorado para IP: {}",
+                        LogSanitizer.sanitize(clientIp));
                 return; // No incrementar, mantener bloqueo fijo
             }
 
@@ -476,8 +486,8 @@ public class PasswordResetService {
             // Aplicar bloqueo si excede el límite
             if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
                 attempt.applyProgressiveBlock();
-                System.out.println("🚫 IP bloqueada por exceder " + MAX_ATTEMPTS +
-                        " intentos: " + clientIp + " (email no revelado)");
+                logger.warn("IP bloqueada por exceder {} intentos: {}",
+                        MAX_ATTEMPTS, LogSanitizer.sanitize(clientIp));
             }
         } else {
             // Crear nuevo registro para esta IP
@@ -491,8 +501,8 @@ public class PasswordResetService {
         }
 
         passwordRecoveryAttemptRepository.save(attempt);
-        System.out.println("📊 Intento #" + attempt.getAttemptCount() +
-                " registrado para IP: " + clientIp + " (email inexistente)");
+        logger.debug("Intento #{} registrado para IP: {} (email inexistente)",
+                attempt.getAttemptCount(), LogSanitizer.sanitize(clientIp));
     }
 
     /**
@@ -508,7 +518,7 @@ public class PasswordResetService {
                 passwordRecoveryAttemptRepository.save(attempt);
             }
         } catch (Exception e) {
-            System.err.println("Error limpiando intentos de recuperación: " + e.getMessage());
+            logger.error("Error limpiando intentos de recuperación: " + e.getMessage());
         }
     }
 
@@ -538,10 +548,11 @@ public class PasswordResetService {
 
             if (!oldAttempts.isEmpty()) {
                 passwordRecoveryAttemptRepository.deleteOldRecords(cutoff);
-                System.out.println("🧹 Limpiados " + oldAttempts.size() + " intentos de recuperación antiguos");
+                logger.info("Limpieza automatica: {} intentos de recuperacion antiguos eliminados",
+                        oldAttempts.size());
             }
         } catch (Exception e) {
-            System.err.println("Error en limpieza automática de intentos de recuperación: " + e.getMessage());
+            logger.error("Error en limpieza automática de intentos de recuperación: " + e.getMessage());
         }
     }
 }

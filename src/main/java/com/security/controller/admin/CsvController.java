@@ -4,6 +4,7 @@ import com.security.dto.admin.CsvImportResultDto;
 import com.security.enums.CollisionRule;
 import com.security.service.CsvExportService;
 import com.security.service.CsvImportService;
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -119,7 +120,7 @@ public class CsvController {
 
         validateCsvFile(file);
         log.info("[CsvController] Importando productos desde CSV: {} | rule={}",
-                file.getOriginalFilename(), rule);
+                LogSanitizer.sanitizeFilename(file.getOriginalFilename()), rule);
         CsvImportResultDto result = csvImportService.importProducts(file, rule);
         return ResponseEntity.ok(result);
     }
@@ -142,7 +143,8 @@ public class CsvController {
             @RequestParam("file") MultipartFile file) throws IOException {
 
         validateCsvFile(file);
-        log.info("[CsvController] Importando usuarios desde CSV: {}", file.getOriginalFilename());
+        log.info("[CsvController] Importando usuarios desde CSV: {}",
+                LogSanitizer.sanitizeFilename(file.getOriginalFilename()));
         CsvImportResultDto result = csvImportService.importUsers(file);
         return ResponseEntity.ok(result);
     }

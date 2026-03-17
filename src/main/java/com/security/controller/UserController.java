@@ -14,17 +14,22 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/users")
 // CORS se maneja globalmente en SecurityConfig
 public class UserController {
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
 
         @Autowired
         private UserService userService;
@@ -140,7 +145,7 @@ public class UserController {
                         return ResponseEntity.ok(new ApiResponse(true, "Contraseña actualizada correctamente"));
 
                 } catch (Exception e) {
-                        System.err.println("Error en change-password: " + e.getMessage());
+                        logger.error("Error en change-password: " + e.getMessage());
                         e.printStackTrace();
                         return ResponseEntity.status(500)
                                         .body(new ApiResponse(false, "Error interno del servidor"));

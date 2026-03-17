@@ -4,6 +4,7 @@ import com.security.entity.User;
 import com.security.entity.LoginAttempt;
 import com.security.repository.UserRepository;
 import com.security.repository.LoginAttemptRepository;
+import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -130,7 +131,7 @@ public class LoginSecurityService {
             }
 
             logger.warn("🚨 Failed login attempt {} for identifier: {}",
-                    record.count, maskIdentifier(identifier));
+                    record.count, LogSanitizer.maskEmail(identifier));
 
             // Si se excede el máximo, bloquear cuenta
             if (record.count >= maxLoginAttempts) {
@@ -155,7 +156,7 @@ public class LoginSecurityService {
             loginAttempt.setAttemptTime(LocalDateTime.now());
             loginAttemptRepository.save(loginAttempt);
 
-            logger.info("✅ Successful login for: {}", maskIdentifier(email));
+            logger.info("✅ Successful login for: {}", LogSanitizer.maskEmail(email));
         } catch (Exception e) {
             logger.warn("Could not persist successful login attempt: {}", e.getMessage());
         }
@@ -175,7 +176,7 @@ public class LoginSecurityService {
             accountLocks.put(key, new LockRecord(unlockTime));
 
             logger.warn("🔒 ACCOUNT LOCKED for identifier: {} for {} minutes due to {} failed attempts",
-                    maskIdentifier(identifier), lockDuration, attempts);
+                    LogSanitizer.maskEmail(identifier), lockDuration, attempts);
 
             // Enviar alerta de seguridad (podría notificar por email al usuario)
             // TODO: Implementar notificación por email de cuenta bloqueada

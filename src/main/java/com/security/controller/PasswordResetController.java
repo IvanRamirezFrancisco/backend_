@@ -6,15 +6,20 @@ import com.security.exception.RateLimitExceededException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/auth")
 // CORS se maneja globalmente en SecurityConfig
 public class PasswordResetController {
+    private static final Logger logger = LoggerFactory.getLogger(PasswordResetController.class);
 
     @Autowired
     private PasswordResetService passwordResetService;
@@ -116,7 +121,7 @@ public class PasswordResetController {
             }
 
         } catch (Exception e) {
-            System.err.println("Error en reset-password: " + e.getMessage());
+            logger.error("Error en reset-password: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of(
                     "success", false,

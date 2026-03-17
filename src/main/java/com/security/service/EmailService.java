@@ -1,15 +1,18 @@
 package com.security.service;
 
 import com.security.entity.User;
+import com.security.util.LogSanitizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.util.HashMap;
 import java.util.Map;
@@ -17,16 +20,35 @@ import java.util.Map;
 @Service
 public class EmailService {
 
+    private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
+
+    // ── Dependencias ────────────────────────────────────────────────────────────
     @Autowired
     private JavaMailSender mailSender;
 
+    @Autowired
+    private RestTemplate restTemplate;
+
+    // ── Configuración base ──────────────────────────────────────────────────────
     @Value("${app.base-url}")
     private String baseUrl;
 
-    @Value("${spring.mail.username}")
-    private String fromEmail;
+    /** Nombre visible del remitente, configurable por entorno */
+    @Value("${app.email.sender-name:AuthSystem}")
+    private String senderName;
 
-    // Configuraciones para servicios alternativos
+    /**
+     * Dirección "From" verificada en Brevo.
+     * Debe ser un remitente verificado en la cuenta Brevo (no el usuario SMTP técnico).
+     * Se usa tanto en la API REST como en el fallback SMTP.
+     */
+    @Value("${app.email.sender-address:${spring.mail.username}}")
+    private String senderAddress;
+
+    // ── API Keys de proveedores ─────────────────────────────────────────────────
+    @Value("${app.email.brevo.api-key:#{null}}")
+    private String brevoApiKey;
+
     @Value("${app.email.resend.api-key:#{null}}")
     private String resendApiKey;
 
@@ -36,846 +58,308 @@ public class EmailService {
     @Value("${app.email.mailgun.domain:#{null}}")
     private String mailgunDomain;
 
-    @Value("${app.email.brevo.api-key:#{null}}")
-    private String brevoApiKey;
+    // ── Constantes ──────────────────────────────────────────────────────────────
+    private static final String BREVO_API_URL  = "https://api.brevo.com/v3/smtp/email";
+    private static final String RESEND_API_URL = "https://api.resend.com/emails";
 
+    // ============================================================================
+    //  API PÚBLICA
+    // ============================================================================
+
+    /**
+     * Envía el correo de verificación de cuenta al usuario recién registrado.
+     * Orden de prioridad: Brevo API → Resend API → SMTP JavaMail (fallback).
+     */
     public void sendVerificationEmail(User user, String verificationToken) {
-        System.out.println("📧 Iniciando envío de email de verificación...");
-        System.out.println("🔧 DEBUG EMAIL CONFIG:");
-        System.out.println("📧 Username: " + fromEmail);
-        System.out.println("🌐 Base URL: " + baseUrl);
-        System.out.println("📤 Para: " + user.getEmail());
-        System.out.println("🔑 Token: " + verificationToken);
+        logger.info("Iniciando envío de email de verificación a: {}", LogSanitizer.maskEmail(user.getEmail()));
 
-        // Crear URL de verificación usando baseUrl (FRONTEND_URL)
         String verificationUrl = baseUrl + "/verify-account?token=" + verificationToken;
-        String htmlContent = buildEmailTemplate(user.getFirstName(), verificationUrl, verificationToken);
-        String subject = "Verificación de cuenta - AuthSystem";
+        String subject         = "Verificación de cuenta - AuthSystem";
+        String html            = buildVerificationTemplate(user.getFirstName(), verificationUrl);
 
-        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
-        if (sendVerificationWithBrevoAPI(user, subject, htmlContent)) {
-            return;
+        if (sendViaBrevoApi(user, subject, html))  return;
+        if (sendViaResendApi(user, subject, html)) return;
+        sendViaSmtp(user, subject, html);
+    }
+
+    /**
+     * Envía el correo de recuperación de contraseña.
+     * Orden de prioridad: Brevo API → Resend API → SMTP JavaMail (fallback).
+     */
+    public void sendPasswordResetEmail(User user, String token) {
+        logger.info("Iniciando envío de email de reseteo a: {}", LogSanitizer.maskEmail(user.getEmail()));
+
+        String frontendUrl = normalizeBaseUrl(baseUrl);
+        String resetUrl    = frontendUrl + "/reset-password?token=" + token;
+        String subject     = "Recuperación de contraseña - AuthSystem";
+        String html        = buildPasswordResetTemplate(user.getFirstName(), resetUrl);
+
+        if (sendViaBrevoApi(user, subject, html))  return;
+        if (sendViaResendApi(user, subject, html)) return;
+        sendViaSmtp(user, subject, html);
+    }
+
+    /**
+     * Envía el código 2FA por email.
+     * Orden de prioridad: Brevo API → Resend API → SMTP JavaMail (fallback).
+     */
+    public void send2FACodeEmail(User user, String code) {
+        logger.info("Iniciando envío de código 2FA a: {}", LogSanitizer.maskEmail(user.getEmail()));
+
+        String subject = "Código de verificación 2FA - AuthSystem";
+        String html    = build2FATemplate(user.getFirstName(), code);
+
+        if (sendViaBrevoApi(user, subject, html))  return;
+        if (sendViaResendApi(user, subject, html)) return;
+        sendViaSmtp(user, subject, html);
+    }
+
+    /**
+     * Envía un email HTML genérico a una dirección, usando la cadena de proveedores.
+     * Útil para notificaciones que no requieren objeto User completo.
+     */
+    public void sendHtmlEmail(String to, String subject, String htmlContent) {
+        User stub = new User();
+        stub.setEmail(to);
+        stub.setFirstName("");
+        if (sendViaBrevoApi(stub, subject, htmlContent))  return;
+        if (sendViaResendApi(stub, subject, htmlContent)) return;
+        sendViaSmtp(stub, subject, htmlContent);
+    }
+
+    // ============================================================================
+    //  PROVEEDORES DE ENVÍO (privados)
+    // ============================================================================
+
+    /**
+     * Envía un email usando la API HTTP de Brevo (v3).
+     * No usa SMTP, por lo que no está sujeto a bloqueos de puerto 587 en Railway.
+     */
+    private boolean sendViaBrevoApi(User user, String subject, String htmlContent) {
+        if (!hasValue(brevoApiKey)) {
+            logger.debug("Brevo API Key no configurada, omitiendo proveedor Brevo.");
+            return false;
         }
-
-        // PRIORIDAD 2: Usar Resend API (backup)
-        if (sendVerificationWithResend(user, subject, htmlContent)) {
-            return;
-        }
-
-        // PRIORIDAD 3: Intentar JavaMail/SMTP (puede fallar en Railway)
         try {
-            System.out.println("📨 Intentando envío con JavaMail/SMTP (puede fallar en Railway)...");
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
 
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            Map<String, Object> body = new HashMap<>();
+            body.put("sender",      Map.of("name", senderName, "email", senderAddress));
+            body.put("to",          new Map[]{ Map.of("email", user.getEmail(), "name", user.getFirstName()) });
+            body.put("subject",     subject);
+            body.put("htmlContent", htmlContent);
 
-            helper.setFrom(fromEmail);
-            helper.setTo(user.getEmail());
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    BREVO_API_URL, new HttpEntity<>(body, headers), String.class);
 
-            mailSender.send(message);
-            System.out.println("✅ Email de verificación enviado exitosamente via SMTP a: " + user.getEmail());
+            if (response.getStatusCode().is2xxSuccessful()) {
+                logger.info("Email enviado via Brevo API a: {} | Respuesta: {}",
+                        LogSanitizer.maskEmail(user.getEmail()), response.getBody());
+                return true;
+            }
+            logger.warn("Brevo API respondió con status no exitoso: {} | Body: {}",
+                    response.getStatusCode(), response.getBody());
+            return false;
 
+        } catch (HttpClientErrorException e) {
+            logger.warn("Brevo API error de cliente ({}) | Body: {}. Intentando siguiente proveedor.",
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            return false;
         } catch (Exception e) {
-            System.err.println("❌ Error enviando email de verificación a " + user.getEmail() + ": " + e.getMessage());
-            throw new RuntimeException("Error al enviar email de verificación. Todos los proveedores fallaron.", e);
+            logger.warn("Error con Brevo API: {}. Intentando siguiente proveedor.", e.getMessage());
+            return false;
         }
     }
 
-    private String buildEmailTemplate(String userName, String verificationUrl, String token) {
+    /**
+     * Envía un email usando la API HTTP de Resend.
+     */
+    private boolean sendViaResendApi(User user, String subject, String htmlContent) {
+        if (!hasValue(resendApiKey)) {
+            logger.debug("Resend API Key no configurada, omitiendo proveedor Resend.");
+            return false;
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(resendApiKey);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("from",    senderName + " <" + senderAddress + ">");
+            body.put("to",      new String[]{ user.getEmail() });
+            body.put("subject", subject);
+            body.put("html",    htmlContent);
+
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    RESEND_API_URL, new HttpEntity<>(body, headers), String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                logger.info("Email enviado via Resend API a: {}", LogSanitizer.maskEmail(user.getEmail()));
+                return true;
+            }
+            logger.warn("Resend API respondió con status no exitoso: {}", response.getStatusCode());
+            return false;
+
+        } catch (HttpClientErrorException e) {
+            logger.warn("Resend API error de cliente ({}). Intentando siguiente proveedor.", e.getStatusCode());
+            return false;
+        } catch (Exception e) {
+            logger.warn("Error con Resend API: {}. Intentando siguiente proveedor.", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Fallback final: envío via JavaMail/SMTP (Brevo SMTP relay).
+     * En Railway puede estar bloqueado el puerto 587; si falla, lanza excepción.
+     */
+    private void sendViaSmtp(User user, String subject, String htmlContent) {
+        logger.info("Intentando envío via SMTP para: {}", LogSanitizer.maskEmail(user.getEmail()));
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(senderAddress, senderName);
+            helper.setTo(user.getEmail());
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            logger.info("Email enviado via SMTP a: {}", LogSanitizer.maskEmail(user.getEmail()));
+        } catch (Exception e) {
+            logger.error("Todos los proveedores de email fallaron para: {}",
+                    LogSanitizer.maskEmail(user.getEmail()), e);
+            throw new RuntimeException(
+                    "No se pudo enviar el email. Por favor inténtalo de nuevo más tarde.", e);
+        }
+    }
+
+    // ============================================================================
+    //  UTILIDADES PRIVADAS
+    // ============================================================================
+
+    private boolean hasValue(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String normalizeBaseUrl(String url) {
+        if (url == null || url.isBlank()) return "";
+        String result = url.trim();
+        if (!result.startsWith("http://") && !result.startsWith("https://")) {
+            result = "https://" + result;
+        }
+        if (result.endsWith("/")) {
+            result = result.substring(0, result.length() - 1);
+        }
+        return result;
+    }
+
+    // ============================================================================
+    //  TEMPLATES HTML
+    // ============================================================================
+
+    private String buildVerificationTemplate(String userName, String verificationUrl) {
         return """
                 <!DOCTYPE html>
-                <html>
-                <head>
+                <html lang="es">
+                <head><meta charset="UTF-8">
                     <style>
-                        .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
-                        .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
-                        .content { padding: 20px; }
-                        .button {
-                            background-color: #4CAF50;
-                            color: white;
-                            padding: 12px 25px;
-                            text-decoration: none;
-                            border-radius: 5px;
-                            display: inline-block;
-                            margin: 20px 0;
-                        }
-                        .code {
-                            background-color: #f1f1f1;
-                            padding: 10px;
-                            font-family: monospace;
-                            font-size: 18px;
-                            text-align: center;
-                            margin: 20px 0;
-                            border-radius: 5px;
-                        }
+                        body { margin:0; padding:0; background:#f4f4f4; font-family:Arial,sans-serif; }
+                        .container { max-width:600px; margin:40px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+                        .header { background:#4CAF50; color:#fff; padding:28px 20px; text-align:center; }
+                        .header h1 { margin:0; font-size:24px; }
+                        .content { padding:32px 28px; color:#333; }
+                        .btn { display:inline-block; background:#4CAF50; color:#fff; padding:14px 32px; border-radius:6px; text-decoration:none; font-weight:bold; margin:24px 0; }
+                        .notice { background:#f9f9f9; border-left:4px solid #4CAF50; padding:12px 16px; font-size:13px; color:#555; border-radius:4px; }
+                        .footer { padding:16px 28px; font-size:12px; color:#888; border-top:1px solid #eee; text-align:center; }
                     </style>
                 </head>
                 <body>
                     <div class="container">
-                        <div class="header">
-                            <h1>¡Bienvenido %s!</h1>
-                        </div>
+                        <div class="header"><h1>¡Bienvenido/a, %s!</h1></div>
                         <div class="content">
-                            <h2>Verifica tu cuenta</h2>
-                            <p>Gracias por registrarte. Para completar tu registro, por favor verifica tu dirección de email.</p>
-
-                            <a href="%s" class="button">Verificar Email</a>
-
-                            <p><strong>Este enlace expira en 24 horas.</strong></p>
-
-                            <p>Si no creaste esta cuenta, puedes ignorar este email.</p>
+                            <h2>Verifica tu correo electrónico</h2>
+                            <p>Gracias por registrarte en AuthSystem. Para activar tu cuenta, haz clic en el botón de abajo:</p>
+                            <a href="%s" class="btn">Verificar mi cuenta</a>
+                            <div class="notice">
+                                <strong>⏰ Este enlace expira en 24 horas.</strong><br>
+                                Si no creaste esta cuenta, puedes ignorar este correo con seguridad.
+                            </div>
                         </div>
+                        <div class="footer">© 2025 AuthSystem · Este mensaje fue generado automáticamente.</div>
                     </div>
                 </body>
                 </html>
-                """
-                .formatted(userName, verificationUrl);
+                """.formatted(userName, verificationUrl);
     }
 
-    public void sendPasswordResetEmail(User user, String token) {
-        System.out.println("📧 Iniciando envío de email de reseteo de contraseña...");
-        System.out.println("🔧 DEBUG RESET PASSWORD CONFIG:");
-        System.out.println("📤 Para: " + user.getEmail());
-        System.out.println("🔑 Token: " + token);
-        System.out.println("🌐 Base URL: " + baseUrl);
-
-        // Crear URL de reseteo de contraseña usando baseUrl (FRONTEND_URL)
-        String frontendUrl = (baseUrl != null) ? baseUrl.trim() : "";
-        // Si el FRONTEND_URL fue configurado sin esquema, añadir https:// por seguridad
-        if (!frontendUrl.startsWith("http://") && !frontendUrl.startsWith("https://") && !frontendUrl.isEmpty()) {
-            frontendUrl = "https://" + frontendUrl;
-        }
-        if (frontendUrl.endsWith("/")) {
-            frontendUrl = frontendUrl.substring(0, frontendUrl.length() - 1);
-        }
-        String resetUrl = frontendUrl + "/reset-password?token=" + token;
-        System.out.println("🔗 Reset URL construido: " + resetUrl);
-        String htmlContent = buildPasswordResetEmailTemplate(user.getFirstName(), resetUrl, token);
-        String subject = "Recuperación de contraseña - AuthSystem";
-
-        // PRIORIDAD 1: Usar Brevo API
-        if (sendPasswordResetWithBrevoAPI(user, subject, htmlContent)) {
-            return;
-        }
-
-        // PRIORIDAD 2: Usar Resend API (backup)
-        if (sendPasswordResetWithResend(user, subject, htmlContent)) {
-            return;
-        }
-
-        // PRIORIDAD 3: Intentar JavaMail/SMTP (puede fallar en Railway)
-        try {
-            System.out.println("📨 Intentando envío de reseteo con JavaMail/SMTP (puede fallar en Railway)...");
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(user.getEmail());
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-            System.out.println("✅ Email de reseteo de contraseña enviado exitosamente via SMTP a: " + user.getEmail());
-
-        } catch (Exception e) {
-            System.err.println(
-                    "❌ Error enviando email de reseteo de contraseña a " + user.getEmail() + ": " + e.getMessage());
-            throw new RuntimeException(
-                    "Error al enviar email de reseteo de contraseña. Todos los proveedores fallaron.", e);
-        }
-    }
-
-    public void send2FACodeEmail(User user, String code) {
-        System.out.println("📧 Iniciando envío de código 2FA por email...");
-
-        // 🔍 DEBUG: Verificar configuraciones
-        System.out.println("🔧 DEBUG CONFIGURACIONES:");
-        System.out.println("🔑 Brevo API Key: '" + brevoApiKey + "'");
-        System.out.println("🔑 Brevo API Key null? " + (brevoApiKey == null));
-        System.out.println("🔑 Brevo API Key empty? " + (brevoApiKey != null && brevoApiKey.trim().isEmpty()));
-        System.out.println("🔑 Resend API Key: '" + resendApiKey + "'");
-
-        // PRIORIDAD 1: Usar Brevo API (más confiable en Railway)
-        String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
-        String subject = "Código de verificación 2FA - AuthSystem";
-        if (sendWith2FAWithBrevoAPI(user, subject, htmlContent)) {
-            return;
-        }
-
-        // PRIORIDAD 2: Usar Resend API (backup)
-        if (sendWithResend(user, code)) {
-            return;
-        }
-
-        // PRIORIDAD 2: Intentar con SendGrid
-        if (sendWithSendGrid(user, code)) {
-            return;
-        }
-
-        // PRIORIDAD 3: Intentar JavaMail con Brevo SMTP
-        if (sendWith2FAWithJavaMail(user, subject, htmlContent)) {
-            return;
-        }
-
-        // PRIORIDAD 4: Intentar con Mailgun
-        if (sendWithMailgun(user, code)) {
-            return;
-        }
-
-        // Si todo falla, lanzar excepción
-        throw new RuntimeException("❌ Error: No se pudo enviar el email 2FA. Todos los proveedores fallaron.");
-    }
-
-    private boolean sendWith2FAWithJavaMail(User user, String subject, String htmlContent) {
-        try {
-            System.out.println("📨 Intentando envío 2FA con JavaMail (Brevo SMTP)...");
-            System.out.println("🔧 DEBUG MAIL CONFIG:");
-            System.out.println("📧 From Email: " + fromEmail);
-            System.out.println("📤 To Email: " + user.getEmail());
-            System.out.println("📝 Subject: " + subject);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail); // Usará la configuración de Brevo
-            helper.setTo(user.getEmail());
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-
-            long startTime = System.currentTimeMillis();
-            mailSender.send(message);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("✅ Código 2FA enviado exitosamente via Brevo SMTP a: " + user.getEmail() +
-                    " (tiempo: " + (endTime - startTime) + "ms)");
-            return true;
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con JavaMail/Brevo SMTP: " + e.getMessage());
-            System.err.println("⚠️  Intentando con proveedores alternativos...");
-            return false;
-        }
-    }
-
-    private boolean sendWith2FAWithBrevoAPI(User user, String subject, String htmlContent) {
-        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
-            System.out.println("🔄 Brevo API Key no configurada, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío 2FA con Brevo API...");
-            System.out.println(
-                    "🔑 DEBUG: Brevo API Key presente = " + (brevoApiKey != null && !brevoApiKey.trim().isEmpty()));
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("api-key", brevoApiKey);
-
-            Map<String, Object> emailData = new HashMap<>();
-
-            // Remitente - usando tu email personal verificado
-            Map<String, String> sender = new HashMap<>();
-            sender.put("name", "AuthSystem");
-            sender.put("email", "pepemontgomez@gmail.com"); // Email verificado en Brevo
-            emailData.put("sender", sender);
-
-            // Destinatarios
-            Map<String, String> recipient = new HashMap<>();
-            recipient.put("email", user.getEmail());
-            recipient.put("name", user.getFirstName());
-            emailData.put("to", new Map[] { recipient });
-
-            emailData.put("subject", subject);
-            emailData.put("htmlContent", htmlContent);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.brevo.com/v3/smtp/email", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("📊 Brevo API Response - Status: " + response.getStatusCode() +
-                    ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Código 2FA enviado exitosamente via Brevo API a: " + user.getEmail() +
-                        " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println("❌ Error Brevo API - Status: " + response.getStatusCode() +
-                        ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Brevo API: " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    private boolean sendWithResend(User user, String code) {
-        // DEBUG: Verificar qué está recibiendo la variable
-        System.out.println("🔍 DEBUG RESEND: resendApiKey = '" + resendApiKey + "'");
-        System.out.println("🔍 DEBUG RESEND: is null? " + (resendApiKey == null));
-        System.out.println("🔍 DEBUG RESEND: is empty? " + (resendApiKey != null && resendApiKey.trim().isEmpty()));
-        System.out.println("🔍 DEBUG RESEND: is placeholder? "
-                + (resendApiKey != null && resendApiKey.equals("re_demo_key_placeholder")));
-
-        if (resendApiKey == null || resendApiKey.trim().isEmpty() || resendApiKey.equals("re_demo_key_placeholder")) {
-            System.out.println("🔄 Resend API Key no configurada o es placeholder, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío con Resend API...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Bearer " + resendApiKey);
-
-            Map<String, Object> emailData = new HashMap<>();
-            emailData.put("from", "AuthSystem <onboarding@resend.dev>");
-            // Enviar al email real del usuario usando el dominio verificado por defecto
-            emailData.put("to", new String[] { user.getEmail() });
-            emailData.put("subject", "Código de verificación 2FA para " + user.getEmail() + " - AuthSystem");
-            emailData.put("html", build2FAEmailTemplate(user.getFirstName(), code));
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.resend.com/emails", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println(
-                    "📊 Resend Response - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Código 2FA enviado exitosamente via Resend a: " + user.getEmail() +
-                        " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println(
-                        "❌ Error Resend - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Resend: " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    private boolean sendWithSendGrid(User user, String code) {
-        String sendGridApiKey = System.getenv("SENDGRID_API_KEY");
-
-        System.out.println("🔍 DEBUG SENDGRID: sendGridApiKey = '" + sendGridApiKey + "'");
-        System.out.println("🔍 DEBUG SENDGRID: is null? " + (sendGridApiKey == null));
-        System.out
-                .println("🔍 DEBUG SENDGRID: is empty? " + (sendGridApiKey != null && sendGridApiKey.trim().isEmpty()));
-
-        if (sendGridApiKey == null || sendGridApiKey.trim().isEmpty()) {
-            System.out.println("🔄 SendGrid API Key no configurada, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío con SendGrid API...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Bearer " + sendGridApiKey);
-
-            // Estructura JSON para SendGrid v3 API
-            Map<String, Object> emailData = new HashMap<>();
-
-            // Personalización del remitente
-            Map<String, String> fromData = new HashMap<>();
-            fromData.put("email", "noreply@authsystem.com");
-            fromData.put("name", "AuthSystem Security");
-            emailData.put("from", fromData);
-
-            // Configuración de destinatarios
-            Map<String, String> toData = new HashMap<>();
-            toData.put("email", user.getEmail());
-            toData.put("name", user.getFirstName());
-            emailData.put("personalizations", new Map[] {
-                    Map.of("to", new Map[] { toData })
-            });
-
-            emailData.put("subject", "Código de verificación 2FA - AuthSystem");
-
-            // Contenido del email
-            emailData.put("content", new Map[] {
-                    Map.of("type", "text/html", "value", build2FAEmailTemplate(user.getFirstName(), code))
-            });
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.sendgrid.com/v3/mail/send", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println(
-                    "📊 SendGrid Response - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Código 2FA enviado exitosamente via SendGrid a: " + user.getEmail() +
-                        " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println(
-                        "❌ Error SendGrid - Status: " + response.getStatusCode() + ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con SendGrid: " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    private boolean sendWithMailgun(User user, String code) {
-        if (mailgunApiKey == null || mailgunApiKey.trim().isEmpty() ||
-                mailgunDomain == null || mailgunDomain.trim().isEmpty()) {
-            System.out.println("🔄 Mailgun no configurado, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío con Mailgun...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.setBasicAuth("api", mailgunApiKey);
-
-            String body = "from=AuthSystem <noreply@" + mailgunDomain + ">" +
-                    "&to=" + user.getEmail() +
-                    "&subject=Código de verificación 2FA - AuthSystem" +
-                    "&html=" + java.net.URLEncoder.encode(build2FAEmailTemplate(user.getFirstName(), code), "UTF-8");
-
-            HttpEntity<String> request = new HttpEntity<>(body, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.mailgun.net/v3/" + mailgunDomain + "/messages", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Código 2FA enviado exitosamente via Mailgun a: " + user.getEmail() +
-                        " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println("❌ Error Mailgun - Status: " + response.getStatusCode());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Mailgun: " + e.getMessage());
-            return false;
-        }
-    }
-
-    private void sendWithJavaMail(User user, String code) {
-        try {
-            System.out.println("📨 Intentando envío con JavaMail (puede fallar en Railway)...");
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(user.getEmail());
-            helper.setSubject("Código de verificación 2FA - AuthSystem");
-
-            String htmlContent = build2FAEmailTemplate(user.getFirstName(), code);
-            helper.setText(htmlContent, true);
-
-            long startTime = System.currentTimeMillis();
-            mailSender.send(message);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("✅ Código 2FA enviado exitosamente via JavaMail a: " + user.getEmail() +
-                    " (tiempo: " + (endTime - startTime) + "ms)");
-
-        } catch (Exception e) {
-            System.err.println("❌ Error enviando código 2FA a " + user.getEmail() + ": " + e.getMessage());
-            System.err.println("⚠️  NOTA: Railway bloquea conexiones SMTP directas.");
-            System.err.println("💡 SOLUCIÓN: Configura Resend o Mailgun API Keys para envío de emails.");
-
-            throw new RuntimeException(
-                    "Error al enviar código 2FA por email. Configura un proveedor de email alternativo (Resend/Mailgun).",
-                    e);
-        }
-    }
-
-    // Método para enviar email de verificación usando Brevo API
-    private boolean sendVerificationWithBrevoAPI(User user, String subject, String htmlContent) {
-        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
-            System.out.println("🔄 Brevo API Key no configurada para verificación, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío de verificación con Brevo API...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("api-key", brevoApiKey);
-
-            Map<String, Object> emailData = new HashMap<>();
-
-            // Remitente - usando email verificado en Brevo
-            Map<String, String> sender = new HashMap<>();
-            sender.put("name", "AuthSystem");
-            sender.put("email", "pepemontgomez@gmail.com"); // Email verificado en Brevo
-            emailData.put("sender", sender);
-
-            // Destinatarios
-            Map<String, String> recipient = new HashMap<>();
-            recipient.put("email", user.getEmail());
-            recipient.put("name", user.getFirstName());
-            emailData.put("to", new Map[] { recipient });
-
-            emailData.put("subject", subject);
-            emailData.put("htmlContent", htmlContent);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.brevo.com/v3/smtp/email", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("📊 Brevo API Response (Verificación) - Status: " + response.getStatusCode() +
-                    ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Email de verificación enviado exitosamente via Brevo API a: " + user.getEmail() +
-                        " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println("❌ Error Brevo API (Verificación) - Status: " + response.getStatusCode() +
-                        ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Brevo API (Verificación): " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // Método para enviar email de verificación usando Resend API
-    private boolean sendVerificationWithResend(User user, String subject, String htmlContent) {
-        if (resendApiKey == null || resendApiKey.trim().isEmpty() || resendApiKey.equals("re_demo_key_placeholder")) {
-            System.out.println("🔄 Resend API Key no configurada para verificación, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío de verificación con Resend API...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Bearer " + resendApiKey);
-
-            Map<String, Object> emailData = new HashMap<>();
-            emailData.put("from", "AuthSystem <onboarding@resend.dev>");
-            emailData.put("to", new String[] { user.getEmail() });
-            emailData.put("subject", subject);
-            emailData.put("html", htmlContent);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.resend.com/emails", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("📊 Resend Response (Verificación) - Status: " + response.getStatusCode() +
-                    ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Email de verificación enviado exitosamente via Resend a: " + user.getEmail() +
-                        " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println("❌ Error Resend (Verificación) - Status: " + response.getStatusCode() +
-                        ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Resend (Verificación): " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // Método para enviar email de reseteo de contraseña usando Brevo API
-    private boolean sendPasswordResetWithBrevoAPI(User user, String subject, String htmlContent) {
-        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
-            System.out.println("🔄 Brevo API Key no configurada para reseteo de contraseña, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío de reseteo de contraseña con Brevo API...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("api-key", brevoApiKey);
-
-            Map<String, Object> emailData = new HashMap<>();
-
-            // Remitente - usando email verificado en Brevo
-            Map<String, String> sender = new HashMap<>();
-            sender.put("name", "AuthSystem Security");
-            sender.put("email", "pepemontgomez@gmail.com"); // Email verificado en Brevo
-            emailData.put("sender", sender);
-
-            // Destinatarios
-            Map<String, String> recipient = new HashMap<>();
-            recipient.put("email", user.getEmail());
-            recipient.put("name", user.getFirstName());
-            emailData.put("to", new Map[] { recipient });
-
-            emailData.put("subject", subject);
-            emailData.put("htmlContent", htmlContent);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.brevo.com/v3/smtp/email", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("📊 Brevo API Response (Reset Password) - Status: " + response.getStatusCode() +
-                    ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println(
-                        "✅ Email de reseteo de contraseña enviado exitosamente via Brevo API a: " + user.getEmail() +
-                                " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println("❌ Error Brevo API (Reset Password) - Status: " + response.getStatusCode() +
-                        ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Brevo API (Reset Password): " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // Método para enviar email de reseteo de contraseña usando Resend API
-    private boolean sendPasswordResetWithResend(User user, String subject, String htmlContent) {
-        if (resendApiKey == null || resendApiKey.trim().isEmpty() || resendApiKey.equals("re_demo_key_placeholder")) {
-            System.out.println("🔄 Resend API Key no configurada para reseteo de contraseña, saltando...");
-            return false;
-        }
-
-        try {
-            System.out.println("📨 Intentando envío de reseteo de contraseña con Resend API...");
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Bearer " + resendApiKey);
-
-            Map<String, Object> emailData = new HashMap<>();
-            emailData.put("from", "AuthSystem Security <onboarding@resend.dev>");
-            emailData.put("to", new String[] { user.getEmail() });
-            emailData.put("subject", subject);
-            emailData.put("html", htmlContent);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    "https://api.resend.com/emails", request, String.class);
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("📊 Resend Response (Reset Password) - Status: " + response.getStatusCode() +
-                    ", Body: " + response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println(
-                        "✅ Email de reseteo de contraseña enviado exitosamente via Resend a: " + user.getEmail() +
-                                " (tiempo: " + (endTime - startTime) + "ms)");
-                return true;
-            } else {
-                System.err.println("❌ Error Resend (Reset Password) - Status: " + response.getStatusCode() +
-                        ", Body: " + response.getBody());
-                return false;
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Error con Resend (Reset Password): " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // Template para email de reseteo de contraseña
-    private String buildPasswordResetEmailTemplate(String userName, String resetUrl, String token) {
+    private String buildPasswordResetTemplate(String userName, String resetUrl) {
         return """
                 <!DOCTYPE html>
-                <html>
-                <head>
+                <html lang="es">
+                <head><meta charset="UTF-8">
                     <style>
-                        .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
-                        .header { background-color: #e74c3c; color: white; padding: 20px; text-align: center; }
-                        .content { padding: 20px; text-align: center; }
-                        .button {
-                            background-color: #e74c3c;
-                            color: white;
-                            padding: 15px 30px;
-                            text-decoration: none;
-                            border-radius: 5px;
-                            display: inline-block;
-                            margin: 20px 0;
-                            font-weight: bold;
-                        }
-                        .token {
-                            background-color: #f1f1f1;
-                            padding: 15px;
-                            font-family: monospace;
-                            font-size: 18px;
-                            text-align: center;
-                            margin: 20px 0;
-                            border-radius: 5px;
-                            border: 2px solid #e74c3c;
-                            color: #333;
-                            word-break: break-all;
-                        }
-                        .warning {
-                            color: #e74c3c;
-                            font-size: 14px;
-                            margin-top: 20px;
-                            background-color: #ffe6e6;
-                            padding: 15px;
-                            border-radius: 5px;
-                            border-left: 4px solid #e74c3c;
-                        }
-                        .footer {
-                            margin-top: 30px;
-                            padding-top: 20px;
-                            border-top: 1px solid #eee;
-                            color: #666;
-                            font-size: 12px;
-                        }
+                        body { margin:0; padding:0; background:#f4f4f4; font-family:Arial,sans-serif; }
+                        .container { max-width:600px; margin:40px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+                        .header { background:#e74c3c; color:#fff; padding:28px 20px; text-align:center; }
+                        .header h1 { margin:0; font-size:24px; }
+                        .content { padding:32px 28px; color:#333; text-align:center; }
+                        .btn { display:inline-block; background:#e74c3c; color:#fff; padding:14px 32px; border-radius:6px; text-decoration:none; font-weight:bold; margin:24px 0; }
+                        .warning { background:#fff5f5; border-left:4px solid #e74c3c; padding:12px 16px; font-size:13px; color:#555; border-radius:4px; text-align:left; }
+                        .footer { padding:16px 28px; font-size:12px; color:#888; border-top:1px solid #eee; text-align:center; }
                     </style>
                 </head>
                 <body>
                     <div class="container">
-                        <div class="header">
-                            <h1>🔒 Recuperación de Contraseña</h1>
-                        </div>
+                        <div class="header"><h1>🔒 Recuperación de contraseña</h1></div>
                         <div class="content">
-                            <h2>Hola %s</h2>
-                            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en AuthSystem.</p>
-
-                            <a href="%s" class="button">Restablecer Contraseña</a>
-
+                            <h2>Hola, %s</h2>
+                            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta.</p>
+                            <a href="%s" class="btn">Restablecer contraseña</a>
                             <p><strong>Este enlace expira en 1 hora.</strong></p>
-
                             <div class="warning">
-                                <strong>⚠️ Importante:</strong><br>
-                                • Si no solicitaste este restablecimiento, ignora este email.<br>
-                                • Tu contraseña actual sigue siendo válida hasta que la cambies.<br>
-                                • Nunca compartas este token con nadie.<br>
-                                • Si tienes dudas, contacta a nuestro soporte.
+                                ⚠️ Si no solicitaste este restablecimiento, ignora este correo.<br>
+                                Tu contraseña actual permanece sin cambios.<br>
+                                Nunca compartas este enlace con nadie.
                             </div>
                         </div>
-                        <div class="footer">
-                            <p>Este email fue enviado automáticamente por AuthSystem.</p>
-                            <p>© 2025 AuthSystem. Todos los derechos reservados.</p>
-                        </div>
+                        <div class="footer">© 2025 AuthSystem · Este mensaje fue generado automáticamente.</div>
                     </div>
                 </body>
                 </html>
                 """.formatted(userName, resetUrl);
     }
 
-    private String build2FAEmailTemplate(String userName, String code) {
+    private String build2FATemplate(String userName, String code) {
         return """
                 <!DOCTYPE html>
-                <html>
-                <head>
+                <html lang="es">
+                <head><meta charset="UTF-8">
                     <style>
-                        .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
-                        .header { background-color: #667eea; color: white; padding: 20px; text-align: center; }
-                        .content { padding: 20px; text-align: center; }
-                        .code {
-                            background-color: #f1f1f1;
-                            padding: 15px;
-                            font-family: monospace;
-                            font-size: 24px;
-                            font-weight: bold;
-                            text-align: center;
-                            margin: 20px 0;
-                            border-radius: 5px;
-                            border: 2px solid #667eea;
-                            color: #333;
-                        }
-                        .warning {
-                            color: #e74c3c;
-                            font-size: 14px;
-                            margin-top: 20px;
-                        }
-                        .footer {
-                            margin-top: 30px;
-                            padding-top: 20px;
-                            border-top: 1px solid #eee;
-                            color: #666;
-                            font-size: 12px;
-                        }
+                        body { margin:0; padding:0; background:#f4f4f4; font-family:Arial,sans-serif; }
+                        .container { max-width:600px; margin:40px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+                        .header { background:#667eea; color:#fff; padding:28px 20px; text-align:center; }
+                        .header h1 { margin:0; font-size:24px; }
+                        .content { padding:32px 28px; color:#333; text-align:center; }
+                        .code { background:#f1f1f1; border:2px solid #667eea; border-radius:8px; padding:18px; font-family:monospace; font-size:32px; font-weight:bold; letter-spacing:8px; color:#333; margin:24px 0; }
+                        .warning { background:#f9f9f9; border-left:4px solid #667eea; padding:12px 16px; font-size:13px; color:#555; border-radius:4px; text-align:left; }
+                        .footer { padding:16px 28px; font-size:12px; color:#888; border-top:1px solid #eee; text-align:center; }
                     </style>
                 </head>
                 <body>
                     <div class="container">
-                        <div class="header">
-                            <h1>🔐 Código de Verificación</h1>
-                        </div>
+                        <div class="header"><h1>🔐 Código de verificación</h1></div>
                         <div class="content">
-                            <h2>Hola %s</h2>
+                            <h2>Hola, %s</h2>
                             <p>Tu código de verificación de dos factores es:</p>
-
                             <div class="code">%s</div>
-
-                            <p>Este código expirará en <strong>5 minutos</strong>.</p>
-
+                            <p>Este código expira en <strong>5 minutos</strong>.</p>
                             <div class="warning">
-                                <strong>⚠️ Importante:</strong><br>
-                                Si no solicitaste este código, ignora este email.<br>
+                                ⚠️ Si no solicitaste este código, ignora este correo.<br>
                                 Nunca compartas este código con nadie.
                             </div>
                         </div>
-                        <div class="footer">
-                            <p>Este email fue enviado automáticamente por AuthSystem.</p>
-                            <p>© 2025 AuthSystem. Todos los derechos reservados.</p>
-                        </div>
+                        <div class="footer">© 2025 AuthSystem · Este mensaje fue generado automáticamente.</div>
                     </div>
                 </body>
                 </html>
