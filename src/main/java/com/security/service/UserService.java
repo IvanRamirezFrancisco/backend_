@@ -167,8 +167,8 @@ public class UserService {
     }
 
     private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
-    private static final String TOKEN_CHARS =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    /** Alfabeto alfanumérico para generación de tokens de verificación */
+    private static final String ALPHANUM_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     /**
      * Genera un token de verificacion de 32 caracteres alfanumericos aleatorios.
@@ -177,7 +177,7 @@ public class UserService {
     private String generateVerificationToken() {
         StringBuilder sb = new StringBuilder(32);
         for (int i = 0; i < 32; i++) {
-            sb.append(TOKEN_CHARS.charAt(TOKEN_RANDOM.nextInt(TOKEN_CHARS.length())));
+            sb.append(ALPHANUM_CHARS.charAt(TOKEN_RANDOM.nextInt(ALPHANUM_CHARS.length())));
         }
         return sb.toString();
     }

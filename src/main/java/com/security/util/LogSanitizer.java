@@ -12,8 +12,9 @@ package com.security.util;
  * <p>
  * Uso recomendado en cualquier {@code logger.info/warn/error} que reciba
  * datos provenientes del cliente:
+ * 
  * <pre>{@code
- *   logger.warn("Login fallido para: {}", LogSanitizer.sanitize(email));
+ * logger.warn("Login fallido para: {}", LogSanitizer.sanitize(email));
  * }</pre>
  * </p>
  *
@@ -56,7 +57,9 @@ public final class LogSanitizer {
      * Sanitiza y enmascara un email para logging.
      * Muestra los 2 primeros caracteres del local-part y el dominio completo.
      *
-     * <p>Ejemplo: {@code ju***@example.com}</p>
+     * <p>
+     * Ejemplo: {@code ju***@example.com}
+     * </p>
      *
      * @param email dirección de correo (puede ser null)
      * @return email enmascarado y sanitizado, nunca null
@@ -68,7 +71,7 @@ public final class LogSanitizer {
         String safe = sanitize(email);
         int atIdx = safe.indexOf('@');
         if (atIdx > 0) {
-            String local  = safe.substring(0, atIdx);
+            String local = safe.substring(0, atIdx);
             String domain = safe.substring(atIdx); // incluye '@'
             String masked = local.length() > 2 ? local.substring(0, 2) + "***" : "***";
             return masked + domain;
@@ -93,7 +96,8 @@ public final class LogSanitizer {
     }
 
     /**
-     * Sanitiza un nombre de archivo proveniente de {@code MultipartFile#getOriginalFilename()}.
+     * Sanitiza un nombre de archivo proveniente de
+     * {@code MultipartFile#getOriginalFilename()}.
      * Además elimina separadores de ruta para prevenir path traversal en logs.
      *
      * @param filename nombre original del archivo (puede ser null)

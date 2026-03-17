@@ -39,7 +39,8 @@ public class EmailService {
 
     /**
      * Dirección "From" verificada en Brevo.
-     * Debe ser un remitente verificado en la cuenta Brevo (no el usuario SMTP técnico).
+     * Debe ser un remitente verificado en la cuenta Brevo (no el usuario SMTP
+     * técnico).
      * Se usa tanto en la API REST como en el fallback SMTP.
      */
     @Value("${app.email.sender-address:${spring.mail.username}}")
@@ -59,11 +60,11 @@ public class EmailService {
     private String mailgunDomain;
 
     // ── Constantes ──────────────────────────────────────────────────────────────
-    private static final String BREVO_API_URL  = "https://api.brevo.com/v3/smtp/email";
+    private static final String BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
     private static final String RESEND_API_URL = "https://api.resend.com/emails";
 
     // ============================================================================
-    //  API PÚBLICA
+    // API PÚBLICA
     // ============================================================================
 
     /**
@@ -74,11 +75,13 @@ public class EmailService {
         logger.info("Iniciando envío de email de verificación a: {}", LogSanitizer.maskEmail(user.getEmail()));
 
         String verificationUrl = baseUrl + "/verify-account?token=" + verificationToken;
-        String subject         = "Verificación de cuenta - AuthSystem";
-        String html            = buildVerificationTemplate(user.getFirstName(), verificationUrl);
+        String subject = "Verificación de cuenta - AuthSystem";
+        String html = buildVerificationTemplate(user.getFirstName(), verificationUrl);
 
-        if (sendViaBrevoApi(user, subject, html))  return;
-        if (sendViaResendApi(user, subject, html)) return;
+        if (sendViaBrevoApi(user, subject, html))
+            return;
+        if (sendViaResendApi(user, subject, html))
+            return;
         sendViaSmtp(user, subject, html);
     }
 
@@ -90,12 +93,14 @@ public class EmailService {
         logger.info("Iniciando envío de email de reseteo a: {}", LogSanitizer.maskEmail(user.getEmail()));
 
         String frontendUrl = normalizeBaseUrl(baseUrl);
-        String resetUrl    = frontendUrl + "/reset-password?token=" + token;
-        String subject     = "Recuperación de contraseña - AuthSystem";
-        String html        = buildPasswordResetTemplate(user.getFirstName(), resetUrl);
+        String resetUrl = frontendUrl + "/reset-password?token=" + token;
+        String subject = "Recuperación de contraseña - AuthSystem";
+        String html = buildPasswordResetTemplate(user.getFirstName(), resetUrl);
 
-        if (sendViaBrevoApi(user, subject, html))  return;
-        if (sendViaResendApi(user, subject, html)) return;
+        if (sendViaBrevoApi(user, subject, html))
+            return;
+        if (sendViaResendApi(user, subject, html))
+            return;
         sendViaSmtp(user, subject, html);
     }
 
@@ -107,28 +112,33 @@ public class EmailService {
         logger.info("Iniciando envío de código 2FA a: {}", LogSanitizer.maskEmail(user.getEmail()));
 
         String subject = "Código de verificación 2FA - AuthSystem";
-        String html    = build2FATemplate(user.getFirstName(), code);
+        String html = build2FATemplate(user.getFirstName(), code);
 
-        if (sendViaBrevoApi(user, subject, html))  return;
-        if (sendViaResendApi(user, subject, html)) return;
+        if (sendViaBrevoApi(user, subject, html))
+            return;
+        if (sendViaResendApi(user, subject, html))
+            return;
         sendViaSmtp(user, subject, html);
     }
 
     /**
-     * Envía un email HTML genérico a una dirección, usando la cadena de proveedores.
+     * Envía un email HTML genérico a una dirección, usando la cadena de
+     * proveedores.
      * Útil para notificaciones que no requieren objeto User completo.
      */
     public void sendHtmlEmail(String to, String subject, String htmlContent) {
         User stub = new User();
         stub.setEmail(to);
         stub.setFirstName("");
-        if (sendViaBrevoApi(stub, subject, htmlContent))  return;
-        if (sendViaResendApi(stub, subject, htmlContent)) return;
+        if (sendViaBrevoApi(stub, subject, htmlContent))
+            return;
+        if (sendViaResendApi(stub, subject, htmlContent))
+            return;
         sendViaSmtp(stub, subject, htmlContent);
     }
 
     // ============================================================================
-    //  PROVEEDORES DE ENVÍO (privados)
+    // PROVEEDORES DE ENVÍO (privados)
     // ============================================================================
 
     /**
@@ -146,9 +156,9 @@ public class EmailService {
             headers.set("api-key", brevoApiKey);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("sender",      Map.of("name", senderName, "email", senderAddress));
-            body.put("to",          new Map[]{ Map.of("email", user.getEmail(), "name", user.getFirstName()) });
-            body.put("subject",     subject);
+            body.put("sender", Map.of("name", senderName, "email", senderAddress));
+            body.put("to", new Map[] { Map.of("email", user.getEmail(), "name", user.getFirstName()) });
+            body.put("subject", subject);
             body.put("htmlContent", htmlContent);
 
             ResponseEntity<String> response = restTemplate.postForEntity(
@@ -187,10 +197,10 @@ public class EmailService {
             headers.setBearerAuth(resendApiKey);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("from",    senderName + " <" + senderAddress + ">");
-            body.put("to",      new String[]{ user.getEmail() });
+            body.put("from", senderName + " <" + senderAddress + ">");
+            body.put("to", new String[] { user.getEmail() });
             body.put("subject", subject);
-            body.put("html",    htmlContent);
+            body.put("html", htmlContent);
 
             ResponseEntity<String> response = restTemplate.postForEntity(
                     RESEND_API_URL, new HttpEntity<>(body, headers), String.class);
@@ -235,7 +245,7 @@ public class EmailService {
     }
 
     // ============================================================================
-    //  UTILIDADES PRIVADAS
+    // UTILIDADES PRIVADAS
     // ============================================================================
 
     private boolean hasValue(String value) {
@@ -243,7 +253,8 @@ public class EmailService {
     }
 
     private String normalizeBaseUrl(String url) {
-        if (url == null || url.isBlank()) return "";
+        if (url == null || url.isBlank())
+            return "";
         String result = url.trim();
         if (!result.startsWith("http://") && !result.startsWith("https://")) {
             result = "https://" + result;
@@ -255,7 +266,7 @@ public class EmailService {
     }
 
     // ============================================================================
-    //  TEMPLATES HTML
+    // TEMPLATES HTML
     // ============================================================================
 
     private String buildVerificationTemplate(String userName, String verificationUrl) {
@@ -290,7 +301,8 @@ public class EmailService {
                     </div>
                 </body>
                 </html>
-                """.formatted(userName, verificationUrl);
+                """
+                .formatted(userName, verificationUrl);
     }
 
     private String buildPasswordResetTemplate(String userName, String resetUrl) {
@@ -327,7 +339,8 @@ public class EmailService {
                     </div>
                 </body>
                 </html>
-                """.formatted(userName, resetUrl);
+                """
+                .formatted(userName, resetUrl);
     }
 
     private String build2FATemplate(String userName, String code) {
@@ -363,6 +376,7 @@ public class EmailService {
                     </div>
                 </body>
                 </html>
-                """.formatted(userName, code);
+                """
+                .formatted(userName, code);
     }
 }
