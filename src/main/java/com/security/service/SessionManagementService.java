@@ -142,7 +142,8 @@ public class SessionManagementService {
      */
     public void invalidateSession(String jti) {
         sessionRepository.revokeByTokenId(jti);
-        // LogSanitizer.maskToken() sanitiza y muestra solo los 8 primeros chars del JTI (CWE-117)
+        // LogSanitizer.maskToken() sanitiza y muestra solo los 8 primeros chars del JTI
+        // (CWE-117)
         logger.info("Sesion cerrada manualmente para JTI: {}", LogSanitizer.maskToken(jti));
     }
 
@@ -224,12 +225,31 @@ public class SessionManagementService {
 
     // Utilidades privadas
     private String getClientIpAddress(HttpServletRequest request) {
-        String xForwardedForHeader = request.getHeader("X-Forwarded-For");
-        if (xForwardedForHeader == null) {
-            return request.getRemoteAddr();
-        } else {
-            return xForwardedForHeader.split(",")[0].trim();
+        String[] headers = {
+                "CF-Connecting-IP",
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR"
+        };
+
+        for (String header : headers) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                ip = ip.split(",")[0].trim();
+                return normalizeIp(ip);
+            }
         }
+
+        return normalizeIp(request.getRemoteAddr());
+    }
+
+    private String normalizeIp(String ip) {
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
+            return "127.0.0.1";
+        }
+        return ip;
     }
 
     private String extractDeviceInfo(String userAgent) {

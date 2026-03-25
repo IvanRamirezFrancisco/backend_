@@ -12,7 +12,6 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "product_attributes", indexes = {
-        @Index(name = "idx_product_attrs_product", columnList = "product_id"),
         @Index(name = "idx_product_attrs_name", columnList = "attribute_name")
 })
 @Getter

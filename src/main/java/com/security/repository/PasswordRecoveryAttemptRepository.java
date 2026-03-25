@@ -99,6 +99,13 @@ public interface PasswordRecoveryAttemptRepository extends JpaRepository<Passwor
         List<PasswordRecoveryAttempt> findAllByEmailOrderByLastAttemptDesc(@Param("email") String email);
 
         /**
+         * Busca todos los registros de recuperación activos (bloqueados o no) para un
+         * email dado — usado por el administrador para resetear el bloqueo.
+         */
+        @Query("SELECT p FROM PasswordRecoveryAttempt p WHERE p.email = :email")
+        List<PasswordRecoveryAttempt> findAllByEmail(@Param("email") String email);
+
+        /**
          * Busca todos los intentos de una IP específica para auditoría
          */
         @Query("SELECT p FROM PasswordRecoveryAttempt p WHERE p.ipAddress = :ipAddress " +

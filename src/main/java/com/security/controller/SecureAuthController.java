@@ -3,6 +3,8 @@ package com.security.controller;
 import com.security.dto.request.LoginRequest;
 import com.security.dto.response.ApiResponse;
 import com.security.dto.response.JwtAuthResponse;
+import com.security.security.UserPrincipal;
+import com.security.service.AuditLogService;
 import com.security.service.LoginSecurityService;
 import com.security.service.SecureJwtService;
 import com.security.service.AuthService;
@@ -42,6 +44,9 @@ public class SecureAuthController {
 
     @Autowired
     private LoginSecurityService loginSecurityService;
+
+    @Autowired
+    private AuditLogService auditLogService;
 
     /**
      * Endpoint para obtener token CSRF
@@ -93,8 +98,21 @@ public class SecureAuthController {
                             loginRequest.getEmail(),
                             loginRequest.getPassword()));
 
-            // Login exitoso - limpiar intentos fallidos
+            // Login exitoso - limpiar intentos fallidos y registrar éxito en login_attempts
             loginSecurityService.clearFailedAttempts(identifier);
+            loginSecurityService.recordSuccessfulAttempt(identifier, clientIp);
+
+            // Auditoría de login exitoso
+            try {
+                Long userId = null;
+                if (authentication.getPrincipal() instanceof UserPrincipal) {
+                    userId = ((UserPrincipal) authentication.getPrincipal()).getId();
+                }
+                auditLogService.log("LOGIN", "USER_LOGIN", "USER", userId,
+                        null, null, "INFO", true);
+            } catch (Exception auditEx) {
+                logger.warn("No se pudo registrar audit log de login exitoso: {}", auditEx.getMessage());
+            }
 
             // Generar tokens
             String deviceInfo = userAgent;
@@ -122,13 +140,21 @@ public class SecureAuthController {
             return ResponseEntity.ok(new ApiResponse(true, "Login exitoso", authResponse));
 
         } catch (AuthenticationException e) {
-            // Registrar intento fallido
-            loginSecurityService.recordFailedAttempt(identifier);
+            // Registrar intento fallido — pasar la IP ya resuelta en el controller
+            loginSecurityService.recordFailedAttempt(identifier, clientIp, "INVALID_CREDENTIALS");
 
             int failedAttempts = loginSecurityService.getFailedAttempts(identifier);
 
             logger.warn("Failed login attempt {} for user: {} from IP: {}",
                     failedAttempts, LogSanitizer.maskEmail(identifier), LogSanitizer.sanitize(clientIp));
+
+            // Auditoría de login fallido
+            try {
+                auditLogService.log("LOGIN_FAILED", "USER_LOGIN", "USER", null,
+                        null, null, "WARNING", false);
+            } catch (Exception auditEx) {
+                logger.warn("No se pudo registrar audit log de login fallido: {}", auditEx.getMessage());
+            }
 
             return ResponseEntity.status(401).body(new ApiResponse(
                     false,
@@ -248,25 +274,36 @@ public class SecureAuthController {
     }
 
     /**
-     * Obtiene la IP real del cliente
+     * Obtiene la IP real del cliente considerando proxies y CDNs.
+     * Orden de prioridad: CF-Connecting-IP → X-Forwarded-For → X-Real-IP
+     * → Proxy-Client-IP → WL-Proxy-Client-IP → HTTP_X_FORWARDED_FOR → RemoteAddr
+     * Normaliza la dirección IPv6 de loopback (::1) a "127.0.0.1".
      */
     private String getClientIpAddress(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        String xRealIp = request.getHeader("X-Real-IP");
-        String cfConnectingIp = request.getHeader("CF-Connecting-IP");
+        String[] headers = {
+                "CF-Connecting-IP",
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR"
+        };
 
-        if (cfConnectingIp != null && !cfConnectingIp.isEmpty()) {
-            return cfConnectingIp;
+        for (String header : headers) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                ip = ip.split(",")[0].trim();
+                return normalizeIp(ip);
+            }
         }
 
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
+        return normalizeIp(request.getRemoteAddr());
+    }
 
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
+    private String normalizeIp(String ip) {
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
+            return "127.0.0.1";
         }
-
-        return request.getRemoteAddr();
+        return ip;
     }
 }

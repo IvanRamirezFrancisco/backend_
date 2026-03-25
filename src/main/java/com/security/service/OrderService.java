@@ -9,6 +9,7 @@ import com.security.enums.OrderStatus;
 import com.security.enums.PaymentStatus;
 import com.security.enums.ShippingStatus;
 import com.security.repository.OrderRepository;
+import com.security.service.AuditLogService;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -25,7 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -45,6 +48,9 @@ public class OrderService {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private AuditLogService auditLogService;
 
     // ==================== LISTAR Y BUSCAR ====================
 
@@ -210,6 +216,22 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
         log.info("updateOrderStatus — estado actualizado de {} a {} para orden {}", oldStatus, newStatus, orderId);
+
+        // Auditoría de cambio de estado
+        try {
+            Map<String, Object> oldValues = new HashMap<>();
+            oldValues.put("status", oldStatus != null ? oldStatus.name() : null);
+            Map<String, Object> newValues = new HashMap<>();
+            newValues.put("status", newStatus.name());
+
+            auditLogService.log(
+                    "ORDER_STATUS_CHANGE", "ORDER_STATUS_CHANGE", "ORDER",
+                    orderId, oldValues, newValues, "INFO", true);
+        } catch (Exception auditEx) {
+            log.warn("⚠️ No se pudo registrar audit log para cambio de estado de orden {}: {}",
+                    orderId, auditEx.getMessage());
+        }
+
         return convertToDTO(savedOrder);
     }
 
@@ -233,6 +255,22 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         log.info("updatePaymentStatus — estado de pago actualizado de {} a {} para orden {}", oldStatus, newStatus,
                 orderId);
+
+        // Auditoría de cambio de estado de pago
+        try {
+            Map<String, Object> oldValues = new HashMap<>();
+            oldValues.put("paymentStatus", oldStatus != null ? oldStatus.name() : null);
+            Map<String, Object> newValues = new HashMap<>();
+            newValues.put("paymentStatus", newStatus.name());
+
+            auditLogService.log(
+                    "ORDER_PAYMENT_CHANGE", "ORDER_STATUS_CHANGE", "ORDER",
+                    orderId, oldValues, newValues, "INFO", true);
+        } catch (Exception auditEx) {
+            log.warn("⚠️ No se pudo registrar audit log para cambio de pago de orden {}: {}",
+                    orderId, auditEx.getMessage());
+        }
+
         return convertToDTO(savedOrder);
     }
 
@@ -268,6 +306,25 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         log.info("updateShippingStatus — estado de envío actualizado de {} a {} para orden {}", oldStatus, newStatus,
                 orderId);
+
+        // Auditoría de cambio de estado de envío
+        try {
+            Map<String, Object> oldValues = new HashMap<>();
+            oldValues.put("shippingStatus", oldStatus != null ? oldStatus.name() : null);
+            Map<String, Object> newValues = new HashMap<>();
+            newValues.put("shippingStatus", newStatus.name());
+            if (trackingNumber != null && !trackingNumber.trim().isEmpty()) {
+                newValues.put("trackingNumber", trackingNumber.trim());
+            }
+
+            auditLogService.log(
+                    "ORDER_SHIPPING_CHANGE", "ORDER_STATUS_CHANGE", "ORDER",
+                    orderId, oldValues, newValues, "INFO", true);
+        } catch (Exception auditEx) {
+            log.warn("⚠️ No se pudo registrar audit log para cambio de envío de orden {}: {}",
+                    orderId, auditEx.getMessage());
+        }
+
         return convertToDTO(savedOrder);
     }
 

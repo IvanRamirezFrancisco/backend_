@@ -205,6 +205,9 @@ public class SecurityConfig {
                                                 .requestMatchers("/api/users/profile").authenticated()
                                                 .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
 
+                                                // Carrito de compras - solo usuarios autenticados
+                                                .requestMatchers("/api/cart/**").authenticated()
+
                                                 // Todo lo demás requiere autenticación
                                                 .anyRequest().authenticated());
 

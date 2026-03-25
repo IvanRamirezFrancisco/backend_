@@ -24,10 +24,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/customers")
-@CrossOrigin(
-        origins = { "http://localhost:4200", "https://login.up.railway.app" },
-        allowCredentials = "true"
-)
+@CrossOrigin(origins = { "http://localhost:4200", "https://login.up.railway.app" }, allowCredentials = "true")
 public class AdminCustomerController {
 
     @Autowired
@@ -40,10 +37,10 @@ public class AdminCustomerController {
      * Listar todos los clientes paginados, ordenados por fecha de registro desc.
      *
      * Query params:
-     *   page    (default 0)
-     *   size    (default 10, máx 100)
-     *   sortBy  (default "createdAt")
-     *   sortDir (default "desc")
+     * page (default 0)
+     * size (default 10, máx 100)
+     * sortBy (default "createdAt")
+     * sortDir (default "desc")
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
@@ -53,8 +50,7 @@ public class AdminCustomerController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir) {
 
-        Page<CustomerListDTO> customersPage =
-                adminCustomerService.getAllCustomers(page, size, sortBy, sortDir);
+        Page<CustomerListDTO> customersPage = adminCustomerService.getAllCustomers(page, size, sortBy, sortDir);
 
         Map<String, Object> response = new HashMap<>();
         response.put("customers", customersPage.getContent());
@@ -70,10 +66,10 @@ public class AdminCustomerController {
      * Buscar clientes con filtros combinados.
      *
      * Query params:
-     *   searchTerm      — texto libre (nombre, apellido, email, teléfono)
-     *   enabled         — true | false
-     *   accountNonLocked — true | false
-     *   page / size
+     * searchTerm — texto libre (nombre, apellido, email, teléfono)
+     * enabled — true | false
+     * accountNonLocked — true | false
+     * page / size
      */
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
@@ -84,8 +80,8 @@ public class AdminCustomerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
 
-        Page<CustomerListDTO> customersPage =
-                adminCustomerService.searchCustomers(searchTerm, enabled, accountNonLocked, page, size);
+        Page<CustomerListDTO> customersPage = adminCustomerService.searchCustomers(searchTerm, enabled,
+                accountNonLocked, page, size);
 
         Map<String, Object> response = new HashMap<>();
         response.put("customers", customersPage.getContent());
@@ -151,6 +147,24 @@ public class AdminCustomerController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * PATCH /api/admin/customers/{id}/reset-recovery-block
+     * Resetear el bloqueo progresivo de recuperación de contraseña de un cliente.
+     * Elimina todos los registros de password_recovery_attempts para su email,
+     * permitiéndole solicitar recuperación de contraseña desde cero.
+     */
+    @PatchMapping("/{id}/reset-recovery-block")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Map<String, Object>> resetRecoveryBlock(@PathVariable Long id) {
+        CustomerListDTO updatedCustomer = adminCustomerService.resetPasswordRecoveryBlock(id);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Bloqueo de recuperación de contraseña reseteado exitosamente");
+        response.put("customer", updatedCustomer);
+
+        return ResponseEntity.ok(response);
+    }
+
     // ==================== Exportación ====================
 
     /**
@@ -158,7 +172,7 @@ public class AdminCustomerController {
      * Exportar la lista de clientes a un archivo CSV con BOM UTF-8.
      *
      * Query params:
-     *   search — término de búsqueda opcional para filtrar el export
+     * search — término de búsqueda opcional para filtrar el export
      */
     @GetMapping("/export/csv")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")

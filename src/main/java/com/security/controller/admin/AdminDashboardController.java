@@ -1,5 +1,7 @@
 package com.security.controller.admin;
 
+import com.security.dto.admin.RecentOrderDTO;
+import com.security.dto.admin.TopProductDTO;
 import com.security.repository.OrderRepository;
 import com.security.repository.ProductRepository;
 import com.security.repository.UserRepository;
@@ -13,6 +15,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -71,15 +74,17 @@ public class AdminDashboardController {
     }
 
     @GetMapping("/recent-orders")
-    public ResponseEntity<?> getRecentOrders(@RequestParam(defaultValue = "5") int limit) {
-        var recentOrders = orderRepository.findRecentOrders(
+    public ResponseEntity<List<RecentOrderDTO>> getRecentOrders(
+            @RequestParam(defaultValue = "5") int limit) {
+        List<RecentOrderDTO> recentOrders = orderRepository.findRecentOrderDtos(
                 org.springframework.data.domain.PageRequest.of(0, limit));
         return ResponseEntity.ok(recentOrders);
     }
 
     @GetMapping("/top-products")
-    public ResponseEntity<?> getTopProducts(@RequestParam(defaultValue = "5") int limit) {
-        var topProducts = productRepository.findTopSellingProducts(
+    public ResponseEntity<List<TopProductDTO>> getTopProducts(
+            @RequestParam(defaultValue = "5") int limit) {
+        List<TopProductDTO> topProducts = productRepository.findTopSellingProductDtos(
                 org.springframework.data.domain.PageRequest.of(0, limit));
         return ResponseEntity.ok(topProducts);
     }

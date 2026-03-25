@@ -13,6 +13,7 @@ import com.security.repository.CategoryRepository;
 import com.security.repository.ProductAttributeRepository;
 import com.security.repository.ProductImageRepository;
 import com.security.repository.ProductRepository;
+import com.security.service.AuditLogService;
 import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +23,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -46,6 +50,9 @@ public class ProductService {
 
     @Autowired
     private ProductAttributeRepository productAttributeRepository;
+
+    @Autowired
+    private AuditLogService auditLogService;
 
     /**
      * Obtener todos los productos
@@ -168,6 +175,11 @@ public class ProductService {
 
         Brand oldBrand = product.getBrand();
 
+        // Capturar estado anterior para auditoría ANTES de modificar
+        final BigDecimal oldPrice = product.getPrice();
+        final Integer oldStock = product.getStock();
+        final Boolean oldActive = product.getActive();
+
         // Actualizar categoría si se proporcionó y es diferente a la actual
         if (productDTO.getCategoryId() != null) {
             Long currentCategoryId = (product.getCategory() != null) ? product.getCategory().getId() : null;
@@ -232,6 +244,26 @@ public class ProductService {
 
         Product updatedProduct = productRepository.save(product);
 
+        // Auditoría de actualización de producto (stock/precio son los campos críticos)
+        try {
+            Map<String, Object> oldValues = new HashMap<>();
+            oldValues.put("price", oldPrice);
+            oldValues.put("stock", oldStock);
+            oldValues.put("active", oldActive);
+
+            Map<String, Object> newValues = new HashMap<>();
+            newValues.put("price", updatedProduct.getPrice());
+            newValues.put("stock", updatedProduct.getStock());
+            newValues.put("active", updatedProduct.getActive());
+
+            auditLogService.log(
+                    "UPDATE", "PRODUCT_UPDATE", "PRODUCT",
+                    updatedProduct.getId(), oldValues, newValues, "INFO", true);
+        } catch (Exception auditEx) {
+            logger.warn("⚠️ No se pudo registrar audit log para actualización de producto {}: {}",
+                    updatedProduct.getId(), auditEx.getMessage());
+        }
+
         // Actualizar galería de imágenes si se proporcionaron
         if (productDTO.getImages() != null) {
             // Eliminar imágenes anteriores
@@ -283,7 +315,24 @@ public class ProductService {
     public void deleteProduct(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado con ID: " + id));
+
+        // Capturar estado anterior antes de eliminar
+        Map<String, Object> oldValues = new HashMap<>();
+        oldValues.put("name", product.getName());
+        oldValues.put("sku", product.getSku());
+        oldValues.put("price", product.getPrice());
+        oldValues.put("stock", product.getStock());
+
         productRepository.delete(product);
+
+        try {
+            auditLogService.log(
+                    "DELETE", "PRODUCT_DELETE", "PRODUCT",
+                    id, oldValues, null, "WARNING", true);
+        } catch (Exception auditEx) {
+            logger.warn("⚠️ No se pudo registrar audit log para eliminación de producto {}: {}",
+                    id, auditEx.getMessage());
+        }
     }
 
     /**
@@ -293,10 +342,26 @@ public class ProductService {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado con ID: " + id));
 
+        boolean oldActive = Boolean.TRUE.equals(product.getActive());
         product.setActive(!product.getActive());
         product.setUpdatedAt(LocalDateTime.now());
 
         Product updatedProduct = productRepository.save(product);
+
+        try {
+            Map<String, Object> oldValues = new HashMap<>();
+            oldValues.put("active", oldActive);
+            Map<String, Object> newValues = new HashMap<>();
+            newValues.put("active", updatedProduct.getActive());
+
+            auditLogService.log(
+                    "UPDATE", "PRODUCT_STATUS_TOGGLE", "PRODUCT",
+                    updatedProduct.getId(), oldValues, newValues, "INFO", true);
+        } catch (Exception auditEx) {
+            logger.warn("⚠️ No se pudo registrar audit log para toggle de estado de producto {}: {}",
+                    id, auditEx.getMessage());
+        }
+
         return convertToDTO(updatedProduct);
     }
 
@@ -410,7 +475,8 @@ public class ProductService {
         int savedCount = 0;
 
         for (ProductAttributeDTO attributeDTO : attributeDTOs) {
-            // Datos del DTO del request — nivel DEBUG para no exponer en logs de producción (CWE-117)
+            // Datos del DTO del request — nivel DEBUG para no exponer en logs de producción
+            // (CWE-117)
             logger.debug(">>> Procesando atributo: key='{}', value='{}'",
                     LogSanitizer.sanitize(attributeDTO.getKey()),
                     LogSanitizer.sanitize(attributeDTO.getValue()));
@@ -426,7 +492,8 @@ public class ProductService {
                 int displayOrder = attributeDTO.getDisplayOrder() != null ? attributeDTO.getDisplayOrder() : order++;
                 attribute.setDisplayOrder(displayOrder);
 
-                // name y value sanitizados; displayOrder es int primitivo — nivel DEBUG (CWE-117)
+                // name y value sanitizados; displayOrder es int primitivo — nivel DEBUG
+                // (CWE-117)
                 logger.debug(">>> Guardando atributo en BD: name='{}', value='{}', order={}",
                         LogSanitizer.sanitize(attribute.getAttributeName()),
                         LogSanitizer.sanitize(attribute.getAttributeValue()),
@@ -435,7 +502,8 @@ public class ProductService {
                 ProductAttribute saved = productAttributeRepository.save(attribute);
                 savedCount++;
                 // saved.getId() es un Long generado por la BD — se convierte a long primitivo
-                // para que SonarQube no lo rastree como dato controlado por el usuario (CWE-117)
+                // para que SonarQube no lo rastree como dato controlado por el usuario
+                // (CWE-117)
                 long savedId = saved.getId() != null ? saved.getId().longValue() : -1L;
                 logger.debug(">>> Atributo guardado con ID: {}", savedId);
             } else {

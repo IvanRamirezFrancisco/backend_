@@ -14,8 +14,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "addresses", indexes = {
         @Index(name = "idx_addresses_user", columnList = "user_id, active"),
-        @Index(name = "idx_addresses_default", columnList = "user_id, is_default"),
-        @Index(name = "idx_addresses_country", columnList = "country_id")
+        @Index(name = "idx_addresses_default", columnList = "user_id, is_default")
 })
 @Data
 @NoArgsConstructor

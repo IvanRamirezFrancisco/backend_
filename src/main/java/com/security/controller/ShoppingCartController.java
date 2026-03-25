@@ -1,6 +1,7 @@
 package com.security.controller;
 
 import com.security.dto.CartDTO;
+import com.security.security.UserPrincipal;
 import com.security.service.ShoppingCartService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,9 +35,12 @@ public class ShoppingCartController {
     @GetMapping
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<CartDTO.CartResponse> getCart(Authentication authentication) {
-        log.info("Obteniendo carrito del usuario: {}", authentication.getName());
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Obteniendo carrito del usuario: {}", userId);
 
-        Long userId = getUserIdFromAuth(authentication);
         var cart = cartService.getOrCreateCartForUser(userId);
         var response = cartService.buildCartResponse(cart.getId());
 
@@ -74,11 +78,17 @@ public class ShoppingCartController {
      * POST /api/cart/{cartId}/items
      */
     @PostMapping("/{cartId}/items")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<CartDTO.CartResponse> addItem(
             @PathVariable Long cartId,
-            @Valid @RequestBody CartDTO.AddItemRequest request) {
+            @Valid @RequestBody CartDTO.AddItemRequest request,
+            Authentication authentication) {
 
-        log.info("Agregando producto {} al carrito {}", request.getProductId(), cartId);
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Agregando producto {} al carrito {} (usuario {})", request.getProductId(), cartId, userId);
 
         var response = cartService.addItemToCart(cartId, request.getProductId(), request.getQuantity());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -89,11 +99,17 @@ public class ShoppingCartController {
      * PUT /api/cart/items/{itemId}
      */
     @PutMapping("/items/{itemId}")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<CartDTO.CartResponse> updateItemQuantity(
             @PathVariable Long itemId,
-            @Valid @RequestBody CartDTO.UpdateItemRequest request) {
+            @Valid @RequestBody CartDTO.UpdateItemRequest request,
+            Authentication authentication) {
 
-        log.info("Actualizando item {} a cantidad {}", itemId, request.getQuantity());
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Actualizando item {} a cantidad {} (usuario {})", itemId, request.getQuantity(), userId);
 
         var response = cartService.updateItemQuantity(request.getItemId(), request.getQuantity());
         return ResponseEntity.ok(response);
@@ -104,8 +120,16 @@ public class ShoppingCartController {
      * DELETE /api/cart/items/{itemId}
      */
     @DeleteMapping("/items/{itemId}")
-    public ResponseEntity<CartDTO.CartResponse> removeItem(@PathVariable Long itemId) {
-        log.info("Eliminando item {}", itemId);
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<CartDTO.CartResponse> removeItem(
+            @PathVariable Long itemId,
+            Authentication authentication) {
+
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Eliminando item {} (usuario {})", itemId, userId);
 
         var response = cartService.removeItem(itemId);
         return ResponseEntity.ok(response);
@@ -143,8 +167,16 @@ public class ShoppingCartController {
      * DELETE /api/cart/{cartId}
      */
     @DeleteMapping("/{cartId}")
-    public ResponseEntity<Map<String, String>> clearCart(@PathVariable Long cartId) {
-        log.info("Vaciando carrito {}", cartId);
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<Map<String, String>> clearCart(
+            @PathVariable Long cartId,
+            Authentication authentication) {
+
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Vaciando carrito {} (usuario {})", cartId, userId);
 
         cartService.clearCart(cartId);
         return ResponseEntity.ok(Map.of("message", "Carrito vaciado exitosamente"));
@@ -177,9 +209,12 @@ public class ShoppingCartController {
             @RequestParam String sessionId,
             Authentication authentication) {
 
-        log.info("Transfiriendo carrito de sesión {} a usuario {}", sessionId, authentication.getName());
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Transfiriendo carrito de sesión {} a usuario {}", sessionId, userId);
 
-        Long userId = getUserIdFromAuth(authentication);
         var cart = cartService.transferCartToUser(sessionId, userId);
         var response = cartService.buildCartResponse(cart.getId());
 
@@ -193,9 +228,12 @@ public class ShoppingCartController {
     @PostMapping
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<CartDTO.CartResponse> createOrGetCart(Authentication authentication) {
-        log.info("Creando/obteniendo carrito para usuario: {}", authentication.getName());
+        Long userId = extractUserId(authentication);
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        log.info("Creando/obteniendo carrito para usuario: {}", userId);
 
-        Long userId = getUserIdFromAuth(authentication);
         var cart = cartService.getOrCreateCartForUser(userId);
         var response = cartService.buildCartResponse(cart.getId());
 
@@ -217,22 +255,21 @@ public class ShoppingCartController {
     }
 
     /**
-     * Extrae el ID del usuario desde la autenticación
+     * Extrae el ID numérico del usuario desde el objeto Authentication.
+     * El principal es siempre un UserPrincipal (implementación interna de
+     * UserDetails)
+     * que almacena el id de la entidad User, NO su email.
      */
-    private Long getUserIdFromAuth(Authentication authentication) {
-        // Asumiendo que el principal contiene el User object
-        // Ajustar según tu implementación de UserDetails
-        try {
-            Object principal = authentication.getPrincipal();
-            if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
-                // Extraer ID del username o de un campo personalizado
-                // Esta es una implementación genérica, ajustar según tu UserDetails
-                return Long.parseLong(userDetails.getUsername());
-            }
-            return null;
-        } catch (Exception e) {
-            log.error("Error al extraer userId de authentication: {}", e.getMessage());
+    private Long extractUserId(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
             return null;
         }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof UserPrincipal userPrincipal) {
+            return userPrincipal.getId();
+        }
+        log.warn("Principal de tipo inesperado: {}. Se esperaba UserPrincipal.",
+                principal != null ? principal.getClass().getName() : "null");
+        return null;
     }
 }

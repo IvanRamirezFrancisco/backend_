@@ -6,6 +6,7 @@ import com.security.entity.User;
 import com.security.repository.PasswordRecoveryAttemptRepository;
 import com.security.repository.PasswordResetTokenRepository;
 import com.security.repository.UserRepository;
+import com.security.service.AuditLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,10 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Servicio de recuperación de contraseña segura
@@ -48,18 +54,12 @@ public class SecurePasswordResetService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     // Configuraciones desde application.yml
     @Value("${app.security.password-reset.token-expiration:3600000}")
     private long tokenExpirationMs;
-
-    @Value("${app.security.password-reset.max-attempts-per-hour:3}")
-    private int maxAttemptsPerHour;
-
-    @Value("${app.security.password-reset.max-attempts-per-day:5}")
-    private int maxAttemptsPerDay;
-
-    @Value("${app.security.password-reset.progressive-delay:true}")
-    private boolean progressiveDelayEnabled;
 
     @Value("${app.base-url}")
     private String baseUrl;
@@ -80,12 +80,9 @@ public class SecurePasswordResetService {
         logger.info("Password reset requested for email: {} from IP: {}",
                 maskEmail(sanitizedEmail), ipAddress);
 
-        // Verificar rate limiting ANTES de cualquier procesamiento
-        if (!isRequestAllowed(sanitizedEmail, ipAddress, userAgent)) {
-            logger.warn("Password reset request blocked due to rate limiting - Email: {}, IP: {}",
-                    maskEmail(sanitizedEmail), ipAddress);
-            return true; // Siempre retornamos true para no revelar información
-        }
+        // Registrar intento y aplicar bloqueo progresivo acumulativo.
+        // Lanza SecurityException si el usuario está bloqueado actualmente.
+        registrarIntento(sanitizedEmail, ipAddress, userAgent);
 
         // Buscar usuario (sin revelar si existe)
         Optional<User> userOpt = userRepository.findByEmail(sanitizedEmail);
@@ -112,9 +109,6 @@ public class SecurePasswordResetService {
             logger.info("Password reset requested for non-existent email: {}",
                     maskEmail(sanitizedEmail));
         }
-
-        // Registrar intento para rate limiting
-        recordAttempt(sanitizedEmail, ipAddress, userAgent);
 
         // SIEMPRE retornar true para no revelar información
         return true;
@@ -197,71 +191,143 @@ public class SecurePasswordResetService {
     }
 
     /**
-     * Verifica si una solicitud está permitida (rate limiting)
+     * Registra un intento de recuperación de contraseña aplicando bloqueo
+     * progresivo ACUMULATIVO. El contador de intentos NUNCA se resetea solo —
+     * acumula de forma permanente para que los bloqueos escalen con el tiempo.
+     *
+     * <p>
+     * Umbrales (basados en intentos totales históricos para email+IP):
+     * <ul>
+     * <li>3 intentos → bloqueado 3 minutos</li>
+     * <li>6 intentos → bloqueado 30 minutos</li>
+     * <li>9 intentos → bloqueado 2 horas</li>
+     * <li>12 intentos → bloqueado 24 horas</li>
+     * <li>13+ intentos → bloqueado 1 año (permanente)</li>
+     * </ul>
+     *
+     * @throws SecurityException si el bloqueo activo aún no ha expirado,
+     *                           con un mensaje descriptivo del tiempo restante.
      */
-    private boolean isRequestAllowed(String email, String ipAddress, String userAgent) {
+    private void registrarIntento(String email, String ipAddress, String userAgent) {
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime oneHourAgo = now.minusHours(1);
-        LocalDateTime oneDayAgo = now.minusDays(1);
 
-        // Verificar intentos por email en la última hora
-        int emailAttemptsLastHour = recoveryAttemptRepository.countAttemptsByEmailInPeriod(email, oneHourAgo, now);
-        if (emailAttemptsLastHour >= maxAttemptsPerHour) {
-            return false;
-        }
-
-        // Verificar intentos por email en el último día
-        int emailAttemptsLastDay = recoveryAttemptRepository.countAttemptsByEmailInPeriod(email, oneDayAgo, now);
-        if (emailAttemptsLastDay >= maxAttemptsPerDay) {
-            return false;
-        }
-
-        // Verificar intentos por IP
-        int ipAttemptsLastHour = recoveryAttemptRepository.countAttemptsByIpInPeriod(ipAddress, oneHourAgo, now);
-        if (ipAttemptsLastHour >= maxAttemptsPerHour * 2) { // Más permisivo para IP (múltiples usuarios)
-            return false;
-        }
-
-        // Verificar si está bloqueado específicamente
-        Optional<PasswordRecoveryAttempt> existingAttempt = recoveryAttemptRepository.findByEmailAndIpAddress(email,
-                ipAddress);
-
-        if (existingAttempt.isPresent()) {
-            PasswordRecoveryAttempt attempt = existingAttempt.get();
-            attempt.resetIfExpired(); // Auto-reset si ha expirado
-
-            if (attempt.isCurrentlyBlocked()) {
-                return false;
+        // Capturar user-agent actualizado desde el request actual (puede diferir del
+        // registrado)
+        try {
+            HttpServletRequest currentRequest = ((ServletRequestAttributes) RequestContextHolder
+                    .currentRequestAttributes()).getRequest();
+            String freshUserAgent = currentRequest.getHeader("User-Agent");
+            if (freshUserAgent != null && freshUserAgent.length() > 500) {
+                freshUserAgent = freshUserAgent.substring(0, 500);
             }
+            if (freshUserAgent != null) {
+                userAgent = freshUserAgent;
+            }
+        } catch (Exception ignored) {
+            // Fuera de contexto web — usar el userAgent recibido como parámetro
         }
 
-        return true;
-    }
-
-    /**
-     * Registra un intento de recuperación para rate limiting
-     */
-    private void recordAttempt(String email, String ipAddress, String userAgent) {
         Optional<PasswordRecoveryAttempt> existingOpt = recoveryAttemptRepository.findByEmailAndIpAddress(email,
                 ipAddress);
 
-        if (existingOpt.isPresent()) {
-            PasswordRecoveryAttempt attempt = existingOpt.get();
-            attempt.incrementAttempt();
+        PasswordRecoveryAttempt attempt;
 
-            // Aplicar bloqueo progresivo si es necesario
-            if (progressiveDelayEnabled && attempt.getAttemptCount() >= maxAttemptsPerHour) {
-                attempt.applyProgressiveBlock();
-                logger.warn("Progressive blocking applied - Email: {}, IP: {}, Attempts: {}",
-                        maskEmail(email), ipAddress, attempt.getAttemptCount());
+        if (existingOpt.isPresent()) {
+            attempt = existingOpt.get();
+
+            // Si hay bloqueo activo: rechazar SIN incrementar el contador
+            if (attempt.isCurrentlyBlocked()) {
+                Duration remaining = Duration.between(now, attempt.getBlockedUntil());
+                long hours = remaining.toHours();
+                long minutes = remaining.toMinutes() % 60;
+                long seconds = remaining.getSeconds() % 60;
+
+                String timeMsg;
+                if (hours > 23) {
+                    timeMsg = "más de 24 horas";
+                } else if (hours > 0) {
+                    timeMsg = hours + "h " + minutes + "m";
+                } else if (minutes > 0) {
+                    timeMsg = minutes + "m " + seconds + "s";
+                } else {
+                    timeMsg = seconds + " segundos";
+                }
+
+                logger.warn("Solicitud de recuperación bloqueada - Email: {}, IP: {}, Tiempo restante: {}",
+                        maskEmail(email), ipAddress, timeMsg);
+
+                throw new SecurityException(
+                        "Demasiados intentos. Por favor espera " + timeMsg + " antes de intentarlo nuevamente.");
             }
 
-            recoveryAttemptRepository.save(attempt);
+            // Bloqueo expirado → levantar flag, pero NO resetear attemptCount
+            attempt.liftBlockIfExpired();
+            // Actualizar user-agent con el del request actual
+            if (userAgent != null) {
+                attempt.setUserAgent(userAgent);
+            }
+
         } else {
-            // Crear nuevo registro de intento
-            PasswordRecoveryAttempt newAttempt = new PasswordRecoveryAttempt(email, ipAddress, userAgent);
-            recoveryAttemptRepository.save(newAttempt);
+            // Primera solicitud para este email+IP
+            attempt = new PasswordRecoveryAttempt(email, ipAddress, userAgent);
+            // El constructor ya establece attemptCount = 1
+            recoveryAttemptRepository.save(attempt);
+
+            // Con 1 intento no hay bloqueo todavía
+            logger.debug("Nuevo registro de recuperación creado - Email: {}, IP: {}",
+                    maskEmail(email), ipAddress);
+            return;
         }
+
+        // Incrementar contador acumulativo
+        attempt.incrementAttempt();
+        // Actualizar user-agent con el del request actual en cada intento
+        if (userAgent != null) {
+            attempt.setUserAgent(userAgent);
+        }
+        int total = attempt.getAttemptCount();
+
+        // Bloquear en cada múltiplo de 3: 3, 6, 9, 12, 15...
+        // Cada ciclo permite exactamente 3 intentos antes de bloquear.
+        boolean shouldBlock = (total % 3 == 0);
+        boolean isPermanent = (total >= 15);
+
+        if (shouldBlock) {
+            attempt.applyProgressiveBlockCumulative(total);
+
+            String nivelBloqueo = isPermanent ? "PERMANENTE (1 año)"
+                    : total >= 12 ? "24 horas"
+                            : total >= 9 ? "2 horas"
+                                    : total >= 6 ? "30 minutos"
+                                            : "3 minutos";
+
+            logger.warn("Bloqueo progresivo aplicado - Email: {}, IP: {}, Intentos acumulados: {}, Duración: {}",
+                    maskEmail(email), ipAddress, total, nivelBloqueo);
+
+            // Registrar en auditoría si es bloqueo permanente
+            if (isPermanent) {
+                try {
+                    Map<String, Object> detalles = new HashMap<>();
+                    detalles.put("email", maskEmail(email));
+                    detalles.put("ipAddress", ipAddress);
+                    detalles.put("totalAttempts", total);
+                    detalles.put("blockedUntil", attempt.getBlockedUntil().toString());
+                    auditLogService.log(
+                            "PERMANENT_BLOCK",
+                            "SECURITY_EVENT",
+                            "PASSWORD_RECOVERY",
+                            null,
+                            null,
+                            detalles,
+                            "CRITICAL",
+                            false);
+                } catch (Exception auditEx) {
+                    logger.error("Error al registrar auditoría de bloqueo permanente: {}", auditEx.getMessage());
+                }
+            }
+        }
+
+        recoveryAttemptRepository.save(attempt);
     }
 
     /**
@@ -313,17 +379,31 @@ public class SecurePasswordResetService {
      * Obtiene la IP real del cliente considerando proxies
      */
     private String getClientIpAddress(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
+        String[] headers = {
+                "CF-Connecting-IP",
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR"
+        };
+
+        for (String header : headers) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                ip = ip.split(",")[0].trim();
+                return normalizeIp(ip);
+            }
         }
 
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
+        return normalizeIp(request.getRemoteAddr());
+    }
 
-        return request.getRemoteAddr();
+    private String normalizeIp(String ip) {
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
+            return "127.0.0.1";
+        }
+        return ip;
     }
 
     /**
@@ -435,12 +515,9 @@ public class SecurePasswordResetService {
             }
 
             // Verificar rate limiting
-            if (!isRequestAllowed(sanitizedEmail, sanitizedIp, sanitizedUserAgent)) {
-                throw new SecurityException("Rate limit exceeded");
-            }
-
-            // Registrar intento
-            recordAttempt(sanitizedEmail, sanitizedIp, sanitizedUserAgent);
+            // Registrar intento con bloqueo progresivo acumulativo.
+            // Lanza SecurityException si el usuario está bloqueado actualmente.
+            registrarIntento(sanitizedEmail, sanitizedIp, sanitizedUserAgent);
 
             // Buscar usuario (sin revelar si existe)
             Optional<User> userOpt = userRepository.findByEmail(sanitizedEmail);

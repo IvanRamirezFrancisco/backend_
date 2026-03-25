@@ -1,0 +1,38 @@
+name: Casa de Musica Castillo - Security Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ] # Se activa cuando subes cambios
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-security-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout del codigo
+      uses: actions/checkout@v4
+
+    - name: Configurar JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Compilar Proyecto (Maven)
+      run: mvn clean package -DskipTests
+
+    - name: Verificacion de Agente RASP
+      run: |
+        echo "Verificando presencia de OpenRASP para el despliegue..."
+        if [ -d "./rasp" ]; then
+          echo "Carpeta RASP detectada. Preparando instrumentacion..."
+        else
+          echo "Error: Configuracion RASP no encontrada."
+          exit 1
+        fi
+
+    - name: Escaneo de Vulnerabilidades (Simulado)
+      run: echo "Escaneando dependencias contra OWASP Top 10..."

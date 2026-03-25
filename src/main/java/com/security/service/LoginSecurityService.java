@@ -5,14 +5,18 @@ import com.security.entity.LoginAttempt;
 import com.security.repository.UserRepository;
 import com.security.repository.LoginAttemptRepository;
 import com.security.util.LogSanitizer;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -36,6 +40,11 @@ public class LoginSecurityService {
 
     @Autowired
     private LoginAttemptRepository loginAttemptRepository;
+
+    /** @Lazy para evitar dependencia circular: AuditLogService → (async context) */
+    @Autowired
+    @Lazy
+    private AuditLogService auditLogService;
 
     @Value("${app.security.login.max-attempts:5}")
     private int maxLoginAttempts;
@@ -92,15 +101,17 @@ public class LoginSecurityService {
     }
 
     /**
-     * Registra un intento fallido de login
-     * Guarda en memoria para respuesta rápida y en BD para auditoría
+     * Registra un intento fallido de login.
+     * La IP se resuelve automáticamente desde el RequestContextHolder.
      */
     public void recordFailedAttempt(String identifier) {
-        recordFailedAttempt(identifier, null, "INVALID_CREDENTIALS");
+        recordFailedAttempt(identifier, resolveCurrentIp(), "INVALID_CREDENTIALS");
     }
 
     /**
-     * Registra un intento fallido de login con detalles adicionales
+     * Registra un intento fallido de login con detalles adicionales.
+     * Si ipAddress es null, se resuelve automáticamente desde el
+     * RequestContextHolder.
      */
     public void recordFailedAttempt(String identifier, String ipAddress, String reason) {
         try {
@@ -118,9 +129,13 @@ public class LoginSecurityService {
             // 2. Persistir en BD para auditoría (solo si es email válido)
             if (identifier != null && identifier.contains("@")) {
                 try {
+                    String resolvedIp = (ipAddress != null && !ipAddress.isEmpty())
+                            ? ipAddress
+                            : resolveCurrentIp();
+
                     LoginAttempt loginAttempt = new LoginAttempt();
                     loginAttempt.setEmail(identifier);
-                    loginAttempt.setIpAddress(ipAddress);
+                    loginAttempt.setIpAddress(resolvedIp);
                     loginAttempt.setSuccessful(false);
                     loginAttempt.setFailureReason(reason);
                     loginAttempt.setAttemptTime(LocalDateTime.now());
@@ -144,14 +159,20 @@ public class LoginSecurityService {
     }
 
     /**
-     * Registra un intento exitoso de login
+     * Registra un intento exitoso de login.
+     * Si ipAddress es null, se resuelve automáticamente desde el
+     * RequestContextHolder.
      */
     public void recordSuccessfulAttempt(String email, String ipAddress) {
         try {
+            String resolvedIp = (ipAddress != null && !ipAddress.isEmpty())
+                    ? ipAddress
+                    : resolveCurrentIp();
+
             // Persistir en BD para auditoría
             LoginAttempt loginAttempt = new LoginAttempt();
             loginAttempt.setEmail(email);
-            loginAttempt.setIpAddress(ipAddress);
+            loginAttempt.setIpAddress(resolvedIp);
             loginAttempt.setSuccessful(true);
             loginAttempt.setAttemptTime(LocalDateTime.now());
             loginAttemptRepository.save(loginAttempt);
@@ -178,8 +199,19 @@ public class LoginSecurityService {
             logger.warn("🔒 ACCOUNT LOCKED for identifier: {} for {} minutes due to {} failed attempts",
                     LogSanitizer.maskEmail(identifier), lockDuration, attempts);
 
-            // Enviar alerta de seguridad (podría notificar por email al usuario)
-            // TODO: Implementar notificación por email de cuenta bloqueada
+            // Auditoría del bloqueo de cuenta — severity WARNING
+            try {
+                auditLogService.log(
+                        "ACCOUNT_LOCK", "ACCOUNT_LOCK", "USER",
+                        null, null,
+                        java.util.Map.of(
+                                "identifier", LogSanitizer.maskEmail(identifier),
+                                "failedAttempts", attempts,
+                                "lockDurationMinutes", lockDuration),
+                        "WARNING", true);
+            } catch (Exception auditEx) {
+                logger.warn("No se pudo registrar audit log para bloqueo de cuenta: {}", auditEx.getMessage());
+            }
 
         } catch (Exception e) {
             logger.error("Error locking account: {}", e.getMessage());
@@ -441,6 +473,78 @@ public class LoginSecurityService {
         if (input == null)
             return "";
         return input.replaceAll("[^a-zA-Z0-9@._-]", "").toLowerCase();
+    }
+
+    /**
+     * Resuelve la IP real del cliente leyendo el RequestContextHolder.
+     * Devuelve "UNKNOWN" si no hay request activa (ej: tarea programada).
+     * Normaliza la dirección IPv6 de loopback a "127.0.0.1".
+     */
+    private String resolveCurrentIp() {
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs == null) {
+                return "UNKNOWN";
+            }
+            return getClientIpAddress(attrs.getRequest());
+        } catch (Exception e) {
+            logger.warn("No se pudo resolver la IP del request actual: {}", e.getMessage());
+            return "UNKNOWN";
+        }
+    }
+
+    /**
+     * Resuelve el User-Agent del request actual desde el RequestContextHolder.
+     * Devuelve null si no hay request activa.
+     */
+    private String resolveCurrentUserAgent() {
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs == null) {
+                return null;
+            }
+            return attrs.getRequest().getHeader("User-Agent");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Obtiene la IP real del cliente considerando proxies y CDNs.
+     * Orden de prioridad: CF-Connecting-IP → X-Forwarded-For → X-Real-IP
+     * → Proxy-Client-IP → WL-Proxy-Client-IP → HTTP_X_FORWARDED_FOR → RemoteAddr
+     * Normaliza la dirección IPv6 de loopback (::1) a "127.0.0.1".
+     */
+    private String getClientIpAddress(HttpServletRequest request) {
+        String[] headers = {
+                "CF-Connecting-IP",
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR"
+        };
+
+        for (String header : headers) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                // X-Forwarded-For puede contener lista: "clientIp, proxy1, proxy2"
+                ip = ip.split(",")[0].trim();
+                return normalizeIp(ip);
+            }
+        }
+
+        return normalizeIp(request.getRemoteAddr());
+    }
+
+    /**
+     * Normaliza la dirección IPv6 de loopback a "127.0.0.1".
+     */
+    private String normalizeIp(String ip) {
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
+            return "127.0.0.1";
+        }
+        return ip;
     }
 
     /**

@@ -16,8 +16,6 @@ import java.time.LocalDateTime;
 @Table(name = "product_reviews", indexes = {
         @Index(name = "idx_review_product", columnList = "product_id"),
         @Index(name = "idx_review_user", columnList = "user_id"),
-        @Index(name = "idx_review_rating", columnList = "rating"),
-        @Index(name = "idx_review_verified", columnList = "verified_purchase"),
         @Index(name = "idx_review_status", columnList = "status")
 })
 @Data

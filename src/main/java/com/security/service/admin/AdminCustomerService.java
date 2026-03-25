@@ -1,9 +1,11 @@
 package com.security.service.admin;
 
 import com.security.dto.admin.CustomerListDTO;
+import com.security.entity.PasswordRecoveryAttempt;
 import com.security.entity.User;
 import com.security.exception.ResourceNotFoundException;
 import com.security.exception.SecurityViolationException;
+import com.security.repository.PasswordRecoveryAttemptRepository;
 import com.security.repository.UserRepository;
 import com.security.service.AuditLogService;
 import org.slf4j.Logger;
@@ -18,6 +20,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * Servicio para gestión de Clientes (is_customer = true).
@@ -39,6 +43,9 @@ public class AdminCustomerService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private PasswordRecoveryAttemptRepository passwordRecoveryAttemptRepository;
 
     // ==================== Consultas de Listado ====================
 
@@ -192,6 +199,55 @@ public class AdminCustomerService {
                 savedCustomer.getEmail(), savedCustomer.getId(), currentAdmin);
 
         return convertToListDTO(savedCustomer);
+    }
+
+    /**
+     * Resetear el bloqueo de recuperación de contraseña de un cliente.
+     * Elimina todos los registros de {@code password_recovery_attempts} asociados
+     * al email del cliente, permitiéndole volver a solicitar recuperación de
+     * contraseña desde cero.
+     *
+     * <p>
+     * Solo debe ser llamado por un administrador autenticado.
+     * </p>
+     *
+     * @param customerId ID del cliente cuyo bloqueo se desea eliminar
+     * @return DTO actualizado del cliente
+     * @throws ResourceNotFoundException  si el cliente no existe
+     * @throws SecurityViolationException si el usuario no es un cliente
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public CustomerListDTO resetPasswordRecoveryBlock(Long customerId) {
+        User customer = findAndValidateCustomer(customerId);
+
+        String currentAdmin = getCurrentUsername();
+
+        List<PasswordRecoveryAttempt> attempts = passwordRecoveryAttemptRepository.findAllByEmail(customer.getEmail());
+
+        if (!attempts.isEmpty()) {
+            for (PasswordRecoveryAttempt attempt : attempts) {
+                attempt.resetByAdmin();
+            }
+            passwordRecoveryAttemptRepository.saveAll(attempts);
+            logger.info("🔓 Bloqueo de recuperación de contraseña reseteado para cliente: {} (ID: {}) "
+                    + "por admin: {} — {} registros afectados",
+                    customer.getEmail(), customer.getId(), currentAdmin, attempts.size());
+        } else {
+            logger.info("ℹ️ No se encontraron registros de bloqueo de recuperación para cliente: {} (ID: {})",
+                    customer.getEmail(), customer.getId());
+        }
+
+        auditLogService.log(
+                "RESET_RECOVERY_BLOCK",
+                "SECURITY_EVENT",
+                "USER",
+                customer.getId(),
+                null,
+                null,
+                "WARNING",
+                true);
+
+        return convertToListDTO(customer);
     }
 
     // ==================== Export ====================

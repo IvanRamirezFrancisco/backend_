@@ -23,6 +23,8 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Service
 @Transactional
@@ -313,11 +315,11 @@ public class PasswordResetService {
         if (existingAttempt.isPresent()) {
             PasswordRecoveryAttempt attempt = existingAttempt.get();
 
-            // Verificar si el bloqueo ya expiró y auto-resetearlo
+            // Verificar si el bloqueo ya expiró y levantarlo (SIN resetear contador)
             if (attempt.isBlocked() && attempt.isBlockExpired()) {
-                logger.debug("Auto-reseteando bloqueo expirado para usuario: {}",
+                logger.debug("Auto-levantando bloqueo expirado para usuario: {}",
                         LogSanitizer.maskEmail(email));
-                attempt.resetIfExpired();
+                attempt.liftBlockIfExpired();
                 passwordRecoveryAttemptRepository.save(attempt);
                 return; // Usuario desbloqueado, puede continuar
             }
@@ -356,11 +358,11 @@ public class PasswordResetService {
         if (existingAttempt.isPresent()) {
             PasswordRecoveryAttempt attempt = existingAttempt.get();
 
-            // Verificar si el bloqueo ya expiró
+            // Verificar si el bloqueo ya expiró y levantarlo (SIN resetear contador)
             if (attempt.isBlocked() && attempt.isBlockExpired()) {
-                logger.debug("Auto-reseteando bloqueo expirado para IP: {}",
+                logger.debug("Auto-levantando bloqueo expirado para IP: {}",
                         LogSanitizer.sanitize(clientIp));
-                attempt.resetIfExpired();
+                attempt.liftBlockIfExpired();
                 passwordRecoveryAttemptRepository.save(attempt);
                 return;
             }
@@ -417,6 +419,7 @@ public class PasswordResetService {
      * ✅ Registrar intento para USUARIO REAL (por email, independiente de IP)
      */
     private void recordAttemptByEmail(String email, String clientIp) {
+        String userAgent = resolveUserAgent();
         // Buscar el registro más reciente para este email
         Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
                 .findMostRecentByEmail(email);
@@ -433,13 +436,14 @@ public class PasswordResetService {
                 return; // No incrementar, mantener bloqueo fijo
             }
 
-            // Actualizar IP más reciente y timestamp
+            // Actualizar IP más reciente, user-agent y timestamp
             attempt.setIpAddress(clientIp);
+            attempt.setUserAgent(userAgent);
             attempt.incrementAttempt();
 
             // Aplicar bloqueo si excede el límite
             if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
-                attempt.applyProgressiveBlock();
+                attempt.applyProgressiveBlockCumulative(attempt.getAttemptCount());
                 logger.warn("Usuario bloqueado por exceder {} intentos: {}",
                         MAX_ATTEMPTS, LogSanitizer.maskEmail(email));
             }
@@ -448,6 +452,7 @@ public class PasswordResetService {
             attempt = new PasswordRecoveryAttempt();
             attempt.setEmail(email);
             attempt.setIpAddress(clientIp);
+            attempt.setUserAgent(userAgent);
             attempt.setAttemptCount(1);
             attempt.setLastAttempt(LocalDateTime.now());
             attempt.setCreatedAt(LocalDateTime.now());
@@ -464,6 +469,7 @@ public class PasswordResetService {
      * ✅ Registrar intento para EMAIL INEXISTENTE (por IP, para rate limiting)
      */
     private void recordAttemptByIp(String email, String clientIp) {
+        String userAgent = resolveUserAgent();
         // Buscar el registro más reciente para esta IP
         Optional<PasswordRecoveryAttempt> existingAttempt = passwordRecoveryAttemptRepository
                 .findMostRecentByIp(clientIp);
@@ -479,13 +485,14 @@ public class PasswordResetService {
                 return; // No incrementar, mantener bloqueo fijo
             }
 
-            // Actualizar email intentado y timestamp
+            // Actualizar email intentado, user-agent y timestamp
             attempt.setEmail(email);
+            attempt.setUserAgent(userAgent);
             attempt.incrementAttempt();
 
             // Aplicar bloqueo si excede el límite
             if (attempt.getAttemptCount() >= MAX_ATTEMPTS) {
-                attempt.applyProgressiveBlock();
+                attempt.applyProgressiveBlockCumulative(attempt.getAttemptCount());
                 logger.warn("IP bloqueada por exceder {} intentos: {}",
                         MAX_ATTEMPTS, LogSanitizer.sanitize(clientIp));
             }
@@ -494,6 +501,7 @@ public class PasswordResetService {
             attempt = new PasswordRecoveryAttempt();
             attempt.setEmail(email);
             attempt.setIpAddress(clientIp);
+            attempt.setUserAgent(userAgent);
             attempt.setAttemptCount(1);
             attempt.setLastAttempt(LocalDateTime.now());
             attempt.setCreatedAt(LocalDateTime.now());
@@ -506,6 +514,24 @@ public class PasswordResetService {
     }
 
     /**
+     * Obtiene el User-Agent del request HTTP actual vía RequestContextHolder.
+     * Retorna null si se llama fuera de contexto web.
+     */
+    private String resolveUserAgent() {
+        try {
+            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+                    .getRequest();
+            String ua = request.getHeader("User-Agent");
+            if (ua != null && ua.length() > 500) {
+                ua = ua.substring(0, 500);
+            }
+            return ua;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * Limpiar intentos de recuperación para un usuario después de un reset exitoso
      */
     private void clearAttemptsForUser(String email) {
@@ -514,7 +540,7 @@ public class PasswordResetService {
                     .findAllByEmailOrderByLastAttemptDesc(email);
 
             for (PasswordRecoveryAttempt attempt : attempts) {
-                attempt.reset();
+                attempt.resetByAdmin();
                 passwordRecoveryAttemptRepository.save(attempt);
             }
         } catch (Exception e) {

@@ -47,6 +47,9 @@ public class UserService {
     @Autowired
     private VerificationTokenRepository verificationTokenRepository;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     public User createUser(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
             throw new BadRequestException("Email address already in use!");
@@ -231,6 +234,14 @@ public class UserService {
         user.setEnabled(true);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
+
+        try {
+            auditLogService.log("UPDATE", "USER_ENABLE", "USER", userId,
+                    null, null, "INFO", true);
+        } catch (Exception auditEx) {
+            logger.warn("⚠️ No se pudo registrar audit log para habilitación de usuario {}: {}",
+                    userId, auditEx.getMessage());
+        }
     }
 
     public void disableUser(Long userId) {
@@ -238,6 +249,14 @@ public class UserService {
         user.setEnabled(false);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
+
+        try {
+            auditLogService.log("UPDATE", "USER_DISABLE", "USER", userId,
+                    null, null, "WARNING", true);
+        } catch (Exception auditEx) {
+            logger.warn("⚠️ No se pudo registrar audit log para deshabilitación de usuario {}: {}",
+                    userId, auditEx.getMessage());
+        }
     }
 
     public void changePassword(Long userId, String newPassword) {
@@ -246,6 +265,14 @@ public class UserService {
         user.setCredentialsNonExpired(true);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
+
+        try {
+            auditLogService.log("UPDATE", "USER_PASSWORD_CHANGE", "USER", userId,
+                    null, null, "WARNING", true);
+        } catch (Exception auditEx) {
+            logger.warn("⚠️ No se pudo registrar audit log para cambio de contraseña de usuario {}: {}",
+                    userId, auditEx.getMessage());
+        }
     }
 
     public void enableTwoFactor(Long userId, String secret) {

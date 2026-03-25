@@ -116,7 +116,8 @@ public class FileUploadController {
 
         for (int i = 0; i < files.length; i++) {
             MultipartFile file = files[i];
-            // i+1 y fileCount son ints internos; filename sanitizado; size es long del sistema de archivos
+            // i+1 y fileCount son ints internos; filename sanitizado; size es long del
+            // sistema de archivos
             int fileIndex = i + 1;
             long fileSize = file.getSize();
             logger.debug("  📄 Procesando archivo {}/{}: {} ({} bytes)",

@@ -20,9 +20,7 @@ import java.time.LocalDateTime;
         @UniqueConstraint(name = "uk_wishlist_user_product", columnNames = { "user_id", "product_id" })
 }, indexes = {
         @Index(name = "idx_wishlist_user", columnList = "user_id"),
-        @Index(name = "idx_wishlist_product", columnList = "product_id"),
-        @Index(name = "idx_wishlist_priority", columnList = "priority"),
-        @Index(name = "idx_wishlist_notified", columnList = "notified_back_in_stock")
+        @Index(name = "idx_wishlist_product", columnList = "product_id")
 })
 @Data
 @NoArgsConstructor

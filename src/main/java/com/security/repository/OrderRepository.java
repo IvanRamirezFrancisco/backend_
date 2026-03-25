@@ -1,5 +1,6 @@
 package com.security.repository;
 
+import com.security.dto.admin.RecentOrderDTO;
 import com.security.entity.Order;
 import com.security.enums.OrderStatus;
 import com.security.enums.PaymentStatus;
@@ -58,6 +59,26 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
         @Query("SELECT o FROM Order o ORDER BY o.createdAt DESC")
         List<Order> findRecentOrders(Pageable pageable);
+
+        /**
+         * Proyección segura para el dashboard: evita LazyInitializationException
+         * al acceder a {@code Order.user} fuera de la sesión Hibernate.
+         * Concatena firstName + lastName del usuario directamente en JPQL.
+         */
+        @Query("""
+                        SELECT new com.security.dto.admin.RecentOrderDTO(
+                            o.id,
+                            o.orderNumber,
+                            o.user.id,
+                            CONCAT(o.user.firstName, ' ', o.user.lastName),
+                            o.total,
+                            o.status,
+                            o.createdAt
+                        )
+                        FROM Order o
+                        ORDER BY o.createdAt DESC
+                        """)
+        List<RecentOrderDTO> findRecentOrderDtos(Pageable pageable);
 
         Long countByStatus(OrderStatus status);
 

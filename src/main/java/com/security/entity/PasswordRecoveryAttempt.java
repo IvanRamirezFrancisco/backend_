@@ -65,29 +65,43 @@ public class PasswordRecoveryAttempt {
     }
 
     /**
-     * Aplica bloqueo con retraso progresivo
+     * Aplica bloqueo progresivo ACUMULATIVO basado en el total histórico de
+     * intentos.
+     * El contador NUNCA se resetea — cada intento suma permanentemente.
+     *
+     * Solo se invoca cuando totalAttempts % 3 == 0 (múltiplos de 3).
+     * Cada ciclo permite exactamente 3 intentos antes de bloquear:
+     *
+     * Ciclo 1 → intento 3 → 3 minutos
+     * Ciclo 2 → intento 6 → 30 minutos
+     * Ciclo 3 → intento 9 → 2 horas
+     * Ciclo 4 → intento 12 → 24 horas
+     * Ciclo 5 → intento 15+ → 1 año (bloqueo permanente)
+     *
+     * @param totalAttempts Número total acumulado de intentos (nunca se resetea)
      */
-    public void applyProgressiveBlock() {
+    public void applyProgressiveBlockCumulative(int totalAttempts) {
+        // Solo bloquear en múltiplos de 3
+        if (totalAttempts % 3 != 0) {
+            return;
+        }
+
         this.blocked = true;
         this.updatedAt = LocalDateTime.now();
 
-        // Retraso progresivo basado en el número de intentos
-        int delayMinutes;
-        switch (attemptCount) {
-            case 1, 2, 3:
-                delayMinutes = 5; // 5 minutos para los primeros 3 intentos
-                break;
-            case 4, 5:
-                delayMinutes = 15; // 15 minutos para intentos 4-5
-                break;
-            case 6, 7, 8:
-                delayMinutes = 60; // 1 hora para intentos 6-8
-                break;
-            default:
-                delayMinutes = 240; // 4 horas para 9+ intentos
+        if (totalAttempts >= 15) {
+            // Bloqueo permanente: 1 año
+            this.blockedUntil = LocalDateTime.now().plusYears(1);
+        } else if (totalAttempts >= 12) {
+            this.blockedUntil = LocalDateTime.now().plusHours(24);
+        } else if (totalAttempts >= 9) {
+            this.blockedUntil = LocalDateTime.now().plusHours(2);
+        } else if (totalAttempts >= 6) {
+            this.blockedUntil = LocalDateTime.now().plusMinutes(30);
+        } else {
+            // totalAttempts == 3 (o cualquier múltiplo de 3 menor a 6 — solo puede ser 3)
+            this.blockedUntil = LocalDateTime.now().plusMinutes(3);
         }
-
-        this.blockedUntil = LocalDateTime.now().plusMinutes(delayMinutes);
     }
 
     /**
@@ -100,20 +114,21 @@ public class PasswordRecoveryAttempt {
     }
 
     /**
-     * Verifica si está actualmente bloqueado
+     * Verifica si está actualmente bloqueado (bloqueo activo y no expirado)
      */
     public boolean isCurrentlyBlocked() {
         return blocked && !isBlockExpired();
     }
 
     /**
-     * Desbloquea y resetea si ha pasado el tiempo
+     * Levanta el bloqueo si el tiempo ya expiró, SIN resetear attemptCount.
+     * El contador histórico se mantiene para que los bloqueos futuros
+     * sigan escalando progresivamente.
      */
-    public void resetIfExpired() {
+    public void liftBlockIfExpired() {
         if (blocked && isBlockExpired()) {
             this.blocked = false;
-            this.blockedUntil = null;
-            this.attemptCount = 0; // CRUCIAL: Resetear contador cuando expira el bloqueo
+            // NO se resetea attemptCount — es acumulativo permanente
             this.updatedAt = LocalDateTime.now();
         }
     }
@@ -126,9 +141,10 @@ public class PasswordRecoveryAttempt {
     }
 
     /**
-     * Resetea completamente los intentos
+     * Resetea completamente el bloqueo (uso exclusivo de administradores).
+     * Deja el attemptCount en 0 para reiniciar el ciclo de progresión.
      */
-    public void reset() {
+    public void resetByAdmin() {
         this.attemptCount = 0;
         this.blocked = false;
         this.blockedUntil = null;

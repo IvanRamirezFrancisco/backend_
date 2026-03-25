@@ -1,7 +1,10 @@
 package com.security.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.security.entity.AuditLog;
 import com.security.repository.AuditLogRepository;
+import com.security.security.UserPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +33,78 @@ public class AuditLogService {
 
     @Autowired
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    // ==================== Método unificado (solicitud principal)
+    // ====================
+
+    /**
+     * Registra un evento de auditoría de forma asíncrona.
+     *
+     * <p>
+     * Uso recomendado en servicios que modifican datos críticos:
+     * 
+     * <pre>
+     * auditLogService.log("UPDATE", "PRODUCT_UPDATE", "PRODUCT",
+     *         product.getId(), oldValues, newValues, "INFO", true);
+     * </pre>
+     *
+     * @param action     Acción realizada (UPDATE, DELETE, LOGIN, etc.)
+     * @param eventType  Tipo de evento (PRODUCT_UPDATE, ORDER_STATUS_CHANGE, etc.)
+     * @param entityType Tipo de entidad afectada (PRODUCT, ORDER, USER, etc.)
+     * @param entityId   ID de la entidad afectada (puede ser null)
+     * @param oldValues  Estado anterior — cualquier objeto; se serializa a JSON
+     *                   internamente
+     * @param newValues  Nuevo estado — cualquier objeto; se serializa a JSON
+     *                   internamente
+     * @param severity   Nivel de severidad: INFO | WARNING | ERROR | CRITICAL
+     * @param isSuccess  true si la operación fue exitosa, false si falló
+     */
+    @Async
+    @Transactional
+    public void log(String action, String eventType, String entityType,
+            Long entityId, Object oldValues, Object newValues,
+            String severity, boolean isSuccess) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String performedBy = resolvePerformedBy(auth);
+            Long performedByUserId = resolveUserId(auth);
+
+            String oldJson = toJson(oldValues);
+            String newJson = toJson(newValues);
+
+            String description = buildDescription(action, eventType, entityType, entityId, performedBy, isSuccess);
+
+            AuditLog entry = new AuditLog();
+            entry.setAction(action);
+            entry.setEventType(eventType);
+            entry.setEventDescription(description);
+            entry.setEntityType(entityType);
+            entry.setEntityId(entityId);
+            entry.setPerformedBy(performedBy);
+            entry.setPerformedByUserId(performedByUserId);
+            entry.setOldValues(oldJson);
+            entry.setNewValues(newJson);
+            entry.setIsSuccess(isSuccess);
+            entry.setSeverity(severity != null ? severity : "INFO");
+            entry.setStatus(isSuccess ? "SUCCESS" : "FAILED");
+            entry.setDetails(description);
+            entry.setResourceAffected(entityType + (entityId != null ? ":" + entityId : ""));
+
+            // Capturar IP y User-Agent desde RequestContextHolder (no requiere parámetro)
+            enrichWithRequestData(entry);
+
+            auditLogRepository.save(entry);
+            logger.info("✅ Audit log: action={} eventType={} entity={}:{} by={} success={}",
+                    action, eventType, entityType, entityId, performedBy, isSuccess);
+
+        } catch (Exception e) {
+            // El fallo de auditoría nunca debe interrumpir la operación principal
+            logger.error("❌ Error al registrar audit log [{} / {}]: {}", action, eventType, e.getMessage());
+        }
+    }
 
     /**
      * Registra un log de auditoría de forma asíncrona
@@ -188,6 +263,79 @@ public class AuditLogService {
         return auditLogRepository.findByEntityTypeAndEntityId(entityType, entityId);
     }
 
+    // ==================== Métodos privados de soporte ====================
+
+    /**
+     * Serializa un objeto a JSON de forma segura.
+     * Devuelve null si el valor es null; un JSON string válido en caso contrario.
+     */
+    private String toJson(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            logger.warn("No se pudo serializar el valor a JSON: {}", e.getMessage());
+            return "{\"error\":\"serialization_failed\"}";
+        }
+    }
+
+    /**
+     * Resuelve el nombre del usuario autenticado desde el SecurityContext.
+     * Devuelve "SYSTEM" si no hay sesión activa.
+     */
+    private String resolvePerformedBy(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            return "SYSTEM";
+        }
+        return auth.getName();
+    }
+
+    /**
+     * Resuelve el ID numérico del usuario autenticado, si el principal es
+     * UserPrincipal.
+     */
+    private Long resolveUserId(Authentication auth) {
+        if (auth == null || !(auth.getPrincipal() instanceof UserPrincipal)) {
+            return null;
+        }
+        return ((UserPrincipal) auth.getPrincipal()).getId();
+    }
+
+    /**
+     * Construye una descripción legible del evento de auditoría.
+     */
+    private String buildDescription(String action, String eventType, String entityType,
+            Long entityId, String performedBy, boolean isSuccess) {
+        return String.format("[%s] %s sobre %s%s — por %s — %s",
+                eventType,
+                action,
+                entityType,
+                entityId != null ? " (ID:" + entityId + ")" : "",
+                performedBy,
+                isSuccess ? "ÉXITO" : "FALLO");
+    }
+
+    /**
+     * Inyecta IP y User-Agent en el AuditLog leyendo el RequestContextHolder.
+     * No lanza excepción si no hay request disponible (operaciones asíncronas o de
+     * batch).
+     */
+    private void enrichWithRequestData(AuditLog entry) {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder
+                    .getRequestAttributes();
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                entry.setIpAddress(getClientIp(request));
+                entry.setUserAgent(request.getHeader("User-Agent"));
+            }
+        } catch (Exception e) {
+            logger.warn("No se pudo capturar información de la request para audit log: {}", e.getMessage());
+        }
+    }
+
     /**
      * Obtener la IP real del cliente (considerando proxies)
      */
@@ -253,11 +401,11 @@ public class AuditLogService {
     }
 
     /**
-     * Log para bloqueo de cuenta
+     * Log para bloqueo de cuenta — severity WARNING por ser evento de seguridad
      */
     public void logAccountLock(Long userId, String userEmail, String lockedBy) {
-        logAction("LOCK_ACCOUNT", "USER", userId,
-                String.format("Cuenta de usuario %s bloqueada por %s", userEmail, lockedBy));
+        log("LOCK_ACCOUNT", "ACCOUNT_LOCK", "USER", userId, null, null, "WARNING", true);
+        logger.warn("⚠️ Cuenta bloqueada: {} por {}", userEmail, lockedBy);
     }
 
     /**

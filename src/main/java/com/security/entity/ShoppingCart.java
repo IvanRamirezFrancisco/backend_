@@ -20,9 +20,7 @@ import java.util.List;
 @Entity
 @Table(name = "shopping_carts", indexes = {
         @Index(name = "idx_cart_user", columnList = "user_id"),
-        @Index(name = "idx_cart_session", columnList = "session_id"),
-        @Index(name = "idx_cart_status", columnList = "status"),
-        @Index(name = "idx_cart_expires", columnList = "expires_at")
+        @Index(name = "idx_cart_status", columnList = "status")
 })
 @Data
 @NoArgsConstructor

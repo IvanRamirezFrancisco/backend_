@@ -18,7 +18,6 @@ import java.util.Set;
  */
 @Entity
 @Table(name = "coupons", indexes = {
-        @Index(name = "idx_coupon_code", columnList = "code", unique = true),
         @Index(name = "idx_coupon_type", columnList = "discount_type"),
         @Index(name = "idx_coupon_active", columnList = "is_active"),
         @Index(name = "idx_coupon_dates", columnList = "valid_from, valid_until")

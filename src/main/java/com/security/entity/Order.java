@@ -26,8 +26,7 @@ import java.util.List;
         @Index(name = "idx_order_user", columnList = "user_id"),
         @Index(name = "idx_order_status", columnList = "status"),
         @Index(name = "idx_order_date", columnList = "created_at"),
-        @Index(name = "idx_payment_status", columnList = "payment_status"),
-        @Index(name = "idx_order_number", columnList = "orderNumber")
+        @Index(name = "idx_payment_status", columnList = "payment_status")
 })
 @Data
 @NoArgsConstructor

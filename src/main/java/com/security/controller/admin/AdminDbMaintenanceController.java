@@ -1,5 +1,6 @@
 package com.security.controller.admin;
 
+import com.security.dto.admin.MaintenanceLogDto;
 import com.security.dto.admin.TableMaintenanceDto;
 import com.security.service.DatabaseMaintenanceService;
 import com.security.util.LogSanitizer;
@@ -87,12 +88,7 @@ public class AdminDbMaintenanceController {
      * Ejecuta {@code REINDEX TABLE} para reconstruir los índices de la tabla
      * especificada.
      *
-     * <p>
-     * El nombre de la tabla es sanitizado en el servicio ({@code ^[a-z_]+$}) para
-     * prevenir inyección SQL.
-     * </p>
-     *
-     * @param tableName nombre de la tabla (solo letras minúsculas y guiones bajos)
+     * @param tableName nombre de la tabla cuyos índices se reconstruirán
      * @return 200 OK con mensaje de éxito y timestamp de ejecución
      */
     @PostMapping("/reindex/{tableName}")
@@ -104,5 +100,61 @@ public class AdminDbMaintenanceController {
                 "operation", "REINDEX TABLE " + tableName,
                 "message", "REINDEX TABLE ejecutado correctamente en la tabla '" + tableName + "'.",
                 "executedAt", LocalDateTime.now().toString()));
+    }
+
+    /**
+     * Ejecuta {@code ANALYZE} sobre la tabla especificada (solo actualiza
+     * estadísticas del planificador, sin limpiar dead tuples).
+     *
+     * @param tableName nombre de la tabla
+     * @return 200 OK con mensaje de éxito y timestamp de ejecución
+     */
+    @PostMapping("/analyze/{tableName}")
+    public ResponseEntity<Map<String, Object>> runAnalyze(@PathVariable String tableName) {
+        log.info("[Admin] Ejecutando ANALYZE en tabla '{}'...", LogSanitizer.sanitize(tableName));
+        maintenanceService.runAnalyze(tableName);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "operation", "ANALYZE " + tableName,
+                "message", "ANALYZE ejecutado correctamente en la tabla '" + tableName + "'.",
+                "executedAt", LocalDateTime.now().toString()));
+    }
+
+    /**
+     * Devuelve los parámetros de autovacuum configurados en PostgreSQL.
+     *
+     * @return 200 OK con lista de parámetros (name, setting, unit)
+     */
+    @GetMapping("/autovacuum-settings")
+    public ResponseEntity<List<Map<String, Object>>> getAutovacuumSettings() {
+        log.info("[Admin] Solicitud de parámetros de autovacuum");
+        return ResponseEntity.ok(maintenanceService.getAutovacuumSettings());
+    }
+
+    /**
+     * Devuelve los índices que necesitan reconstrucción, filtrados con tres
+     * condiciones estrictas (eficiencia &lt; 75 %, tráfico &gt; 100, registros
+     * vivos &gt; 10). Solo incluye índices que realmente requieren REINDEX,
+     * sin falsos positivos de tablas vacías.
+     *
+     * @return 200 OK con lista de índices problemáticos ordenada por eficiencia
+     *         ascendente
+     */
+    @GetMapping("/problematic-indexes")
+    public ResponseEntity<List<Map<String, Object>>> getProblematicIndexes() {
+        log.info("[Admin] Solicitud de índices problemáticos para mantenimiento");
+        return ResponseEntity.ok(maintenanceService.getProblematicIndexes());
+    }
+
+    /**
+     * Devuelve los últimos 20 registros del historial de operaciones de
+     * mantenimiento, ordenados por fecha descendente.
+     *
+     * @return 200 OK con lista de {@link MaintenanceLogDto}
+     */
+    @GetMapping("/history")
+    public ResponseEntity<List<MaintenanceLogDto>> getMaintenanceHistory() {
+        log.info("[Admin] Solicitud de historial de operaciones de mantenimiento");
+        return ResponseEntity.ok(maintenanceService.getRecentHistory());
     }
 }

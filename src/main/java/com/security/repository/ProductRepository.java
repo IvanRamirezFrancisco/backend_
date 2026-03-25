@@ -1,5 +1,6 @@
 package com.security.repository;
 
+import com.security.dto.admin.TopProductDTO;
 import com.security.entity.Product;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -64,6 +65,25 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
         @Query("SELECT p FROM Product p ORDER BY p.salesCount DESC")
         List<Product> findTopSellingProducts(Pageable pageable);
+
+        /**
+         * Proyección segura para el dashboard: evita LazyInitializationException
+         * al acceder a {@code Product.category} fuera de la sesión Hibernate.
+         * Selecciona únicamente campos escalares propios de {@code Product}.
+         */
+        @Query("""
+                        SELECT new com.security.dto.admin.TopProductDTO(
+                            p.id,
+                            p.name,
+                            p.sku,
+                            p.price,
+                            p.salesCount,
+                            p.imageUrl
+                        )
+                        FROM Product p
+                        ORDER BY p.salesCount DESC
+                        """)
+        List<TopProductDTO> findTopSellingProductDtos(Pageable pageable);
 
         boolean existsBySku(String sku);
 

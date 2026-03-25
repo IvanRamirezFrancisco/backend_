@@ -1,0 +1,28 @@
+-- ============================================================================
+-- V11: Otorgar rol pg_monitor al usuario de la aplicación
+-- ============================================================================
+-- PROBLEMA RESUELTO:
+--   En PostgreSQL 9.6+, un usuario no-superusuario solo puede ver sus PROPIAS
+--   filas en pg_stat_activity. El usuario 'spring_app' (DML-only, no superusuario)
+--   veía únicamente sus propias conexiones del pool HikariCP, dejando las 9
+--   conexiones de pgAdmin sin clasificar como "Otras conexiones".
+--
+-- SOLUCIÓN:
+--   pg_monitor es un rol de solo lectura incorporado en PostgreSQL 10+ que otorga
+--   acceso completo a todas las vistas de monitoreo del sistema, incluyendo:
+--     - pg_stat_activity  (TODAS las conexiones, no solo las propias)
+--     - pg_stat_replication
+--     - pg_stat_bgwriter
+--     - pg_stat_database
+--   Este rol es el estándar de la industria para usuarios de aplicación que
+--   necesitan monitorear el servidor. NO otorga permisos de escritura ni de DDL.
+--
+-- RESULTADO ESPERADO:
+--   - pool       = conexiones HikariCP de Spring Boot
+--   - pg_internal = procesos internos de PostgreSQL (autovacuum, checkpointer, etc.)
+--   - admin_tools = conexiones de pgAdmin 4 / DBeaver / DataGrip (antes en "Otras")
+--   - user_sessions = sesiones activas de usuarios de la aplicación
+--   - Otras conexiones = 0 (todo clasificado)
+-- ============================================================================
+-- Otorgar rol de monitoreo de solo lectura (sin permisos DDL ni DML)
+GRANT pg_monitor TO spring_app;
