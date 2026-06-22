@@ -27,13 +27,27 @@ import java.util.List;
  * </ul>
  */
 @RestController
-@RequestMapping("/api/public/products")
+@RequestMapping({"/api/public/products", "/api/products"})
 public class PublicProductController {
 
     private final PublicProductService publicProductService;
 
     public PublicProductController(PublicProductService publicProductService) {
         this.publicProductService = publicProductService;
+    }
+
+    // ── GET /api/public/products (y /api/products) ────────────────────────────
+
+    /**
+     * Endpoint raíz. Actúa como alias seguro para devolver el catálogo por defecto.
+     * Evita arrojar 404/500 cuando se consulta la raíz pública de productos.
+     */
+    @GetMapping
+    public ResponseEntity<Page<PublicProductDTO>> getRootCatalog(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
+        return ResponseEntity.ok(
+                publicProductService.getCatalog(null, null, null, page, size, "featured"));
     }
 
     // ── GET /api/public/products/latest ───────────────────────────────────────

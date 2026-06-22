@@ -167,10 +167,13 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                                                 // ========== ENDPOINTS PÚBLICOS ==========
-                                                // API pública del Storefront (sin autenticación)
-                                                .requestMatchers("/api/public/**").permitAll()
-
-                                                // API de Alexa (solo lectura)
+                                                // API pública del Storefront (solo lectura explícita)
+                                                .requestMatchers(HttpMethod.GET, "/api/products/catalog").permitAll()
+                                                .requestMatchers(HttpMethod.GET, "/api/products/catalog/**").permitAll()
+                                                .requestMatchers(HttpMethod.GET, "/api/products/*").permitAll() // Para detalle por ID
+                                                .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
+                                                .requestMatchers(HttpMethod.GET, "/api/brands/**").permitAll()
+                                                .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
                                                 .requestMatchers(HttpMethod.GET, "/api/alexa/**").permitAll()
 
                                                 // Autenticación

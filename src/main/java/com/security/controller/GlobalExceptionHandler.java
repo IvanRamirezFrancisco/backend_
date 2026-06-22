@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -381,6 +383,30 @@ public class GlobalExceptionHandler {
                                 .build();
 
                 return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+        }
+
+        /**
+         * Maneja rutas no encontradas (404)
+         * Evita que se dispare el manejador global de Exception (500)
+         */
+        @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+        public ResponseEntity<ErrorResponse> handleNotFound(
+                        Exception ex, WebRequest request) {
+
+                String errorId = UUID.randomUUID().toString();
+                log.warn("[errorId={}] Recurso no encontrado en path={}: {}",
+                                errorId, request.getDescription(false), ex.getMessage());
+
+                ErrorResponse error = ErrorResponse.builder()
+                                .timestamp(LocalDateTime.now())
+                                .status(HttpStatus.NOT_FOUND.value())
+                                .error("Not Found")
+                                .message("Recurso no encontrado")
+                                .path(request.getDescription(false).replace("uri=", ""))
+                                .errorId(errorId)
+                                .build();
+
+                return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
         }
 
         /**
