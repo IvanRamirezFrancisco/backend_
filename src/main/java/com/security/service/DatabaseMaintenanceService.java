@@ -20,6 +20,16 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
+ * Mapa estático: nombre plano de tabla → nombre cualificado con schema.
+ * <p>
+ * {@code pg_stat_user_tables} devuelve {@code relname} sin schema, pero los
+ * comandos DDL ({@code VACUUM ANALYZE}, {@code REINDEX TABLE}, {@code ANALYZE})
+ * requieren el nombre cualificado ({@code schema.table}) cuando las tablas
+ * viven fuera del schema {@code public}.
+ * </p>
+ */
+
+/**
  * Servicio para operaciones de mantenimiento manual de la base de datos
  * PostgreSQL.
  *
@@ -48,56 +58,67 @@ public class DatabaseMaintenanceService {
     // ── SQL ───────────────────────────────────────────────────────────────────
 
     /**
-     * Tablas de usuario permitidas para operaciones de mantenimiento.
-     * Actúa como whitelist exhaustiva para prevenir SQL Injection (CWE-89):
-     * solo se permiten tablas explícitamente listadas. SonarQube reconoce
-     * este patrón como protección efectiva — ningún valor externo puede
-     * inyectar SQL arbitrario porque la comparación es contra un Set hardcoded.
-     *
+     * Mapa nombre_tabla → schema.nombre_tabla para cualificar comandos DDL.
      * <p>
-     * Cubre TODAS las tablas @Entity de la aplicación.
+     * {@code pg_stat_user_tables.relname} devuelve el nombre plano; pero
+     * {@code VACUUM ANALYZE}, {@code REINDEX TABLE} y {@code ANALYZE}
+     * necesitan el nombre cualificado con schema cuando las tablas no están
+     * en {@code public}.
      * </p>
      */
-    private static final Set<String> ALLOWED_TABLES = Set.of(
-            // ── Usuarios y autorización ──────────────────────────────────────
-            "users",
-            "roles",
-            "permissions",
-            "user_roles",
-            "role_permissions",
-            // ── Sesiones y tokens ────────────────────────────────────────────
-            "active_sessions",
-            "refresh_tokens",
-            "verification_tokens",
-            "password_reset_tokens",
-            "two_factor_tokens",
-            "backup_codes",
-            // ── Seguridad / auditoría ────────────────────────────────────────
-            "login_attempts",
-            "password_recovery_attempts",
-            "audit_logs",
-            "backup_logs",
-            "security_settings",
-            // ── Catálogo de productos ────────────────────────────────────────
-            "products",
-            "categories",
-            "brands",
-            "product_images",
-            "product_attributes",
-            "product_price_history",
-            "product_reviews",
-            "review_helpfulness",
-            // ── Pedidos y carrito ────────────────────────────────────────────
-            "orders",
-            "order_items",
-            "cart_items",
-            "shopping_carts",
-            // ── Otros ────────────────────────────────────────────────────────
-            "coupons",
-            "coupon_usage",
-            "addresses",
-            "countries",
-            "wishlists");
+    private static final Map<String, String> TABLE_SCHEMA_MAP = Map.ofEntries(
+            // ── auth ─────────────────────────────────────────────────────────
+            Map.entry("users", "auth.users"),
+            Map.entry("roles", "auth.roles"),
+            Map.entry("permissions", "auth.permissions"),
+            Map.entry("user_roles", "auth.user_roles"),
+            Map.entry("role_permissions", "auth.role_permissions"),
+            Map.entry("active_sessions", "auth.active_sessions"),
+            Map.entry("refresh_tokens", "auth.refresh_tokens"),
+            Map.entry("verification_tokens", "auth.verification_tokens"),
+            Map.entry("two_factor_tokens", "auth.two_factor_tokens"),
+            Map.entry("backup_codes", "auth.backup_codes"),
+            // ── security ─────────────────────────────────────────────────────
+            Map.entry("login_attempts", "security.login_attempts"),
+            Map.entry("password_reset_tokens", "security.password_reset_tokens"),
+            Map.entry("password_recovery_attempts", "security.password_recovery_attempts"),
+            Map.entry("audit_logs", "security.audit_logs"),
+            Map.entry("security_settings", "security.security_settings"),
+            Map.entry("staff_invitations", "security.staff_invitations"),
+            Map.entry("countries", "security.countries"),
+            // ── catalog ──────────────────────────────────────────────────────
+            Map.entry("products", "catalog.products"),
+            Map.entry("categories", "catalog.categories"),
+            Map.entry("brands", "catalog.brands"),
+            Map.entry("product_images", "catalog.product_images"),
+            Map.entry("product_attributes", "catalog.product_attributes"),
+            Map.entry("product_price_history", "catalog.product_price_history"),
+            Map.entry("product_reviews", "catalog.product_reviews"),
+            Map.entry("review_helpfulness", "catalog.review_helpfulness"),
+            // ── sales ────────────────────────────────────────────────────────
+            Map.entry("orders", "sales.orders"),
+            Map.entry("order_items", "sales.order_items"),
+            Map.entry("shopping_carts", "sales.shopping_carts"),
+            Map.entry("cart_items", "sales.cart_items"),
+            Map.entry("coupons", "sales.coupons"),
+            Map.entry("coupon_usage", "sales.coupon_usage"),
+            Map.entry("coupon_applicable_categories", "sales.coupon_applicable_categories"),
+            Map.entry("coupon_applicable_products", "sales.coupon_applicable_products"),
+            Map.entry("wishlists", "sales.wishlists"),
+            // ── customer ─────────────────────────────────────────────────────
+            Map.entry("addresses", "customer.addresses"),
+            // ── ops ──────────────────────────────────────────────────────────
+            Map.entry("system_automations", "ops.system_automations"),
+            Map.entry("automation_execution_logs", "ops.automation_execution_logs"),
+            Map.entry("backup_logs", "ops.backup_logs"),
+            Map.entry("maintenance_config", "ops.maintenance_config"),
+            Map.entry("maintenance_logs", "ops.maintenance_logs"));
+
+    /**
+     * Whitelist derivado del mapa de schemas — solo se permite operar sobre
+     * estas tablas. Protección contra SQL Injection (CWE-89).
+     */
+    private static final Set<String> ALLOWED_TABLES = TABLE_SCHEMA_MAP.keySet();
 
     // ── SQL estático (sin datos de usuario) ──────────────────────────────────
 
@@ -210,9 +231,11 @@ public class DatabaseMaintenanceService {
             double bloat = rs.getDouble("bloat_percent");
             // Umbrales unificados con DatabaseMonitoringService.calculateTableStatus
             String status;
-            if (dead > 20 && bloat > 30.0) {
+            if (dead > DatabaseThresholds.TABLE_DEAD_TUPLES_CRITICAL
+                    && bloat > DatabaseThresholds.TABLE_BLOAT_PCT_CRITICAL) {
                 status = "critical";
-            } else if (dead > 10 && bloat > 20.0) {
+            } else if (dead > DatabaseThresholds.TABLE_DEAD_TUPLES_WARNING
+                    && bloat > DatabaseThresholds.TABLE_BLOAT_PCT_WARNING) {
                 status = "warning";
             } else {
                 status = "ok";
@@ -292,6 +315,7 @@ public class DatabaseMaintenanceService {
      */
     public void runVacuum(String tableName) {
         validateTableName(tableName);
+        String qualifiedName = TABLE_SCHEMA_MAP.getOrDefault(tableName, tableName);
 
         // Capturar dead tuples antes
         Integer deadBefore = queryDeadTuples(tableName);
@@ -309,8 +333,9 @@ public class DatabaseMaintenanceService {
 
         long start = System.currentTimeMillis();
         try {
-            // tableName proviene del whitelist ALLOWED_TABLES — seguro contra SQL injection
-            String sql = "VACUUM ANALYZE " + tableName;
+            // qualifiedName proviene del whitelist TABLE_SCHEMA_MAP — seguro contra SQL
+            // injection
+            String sql = "VACUUM ANALYZE " + qualifiedName;
             log.info("[Maintenance] Iniciando VACUUM ANALYZE en tabla '{}'...",
                     LogSanitizer.sanitize(tableName));
             jdbc.execute(sql);
@@ -344,6 +369,7 @@ public class DatabaseMaintenanceService {
      */
     public void runReindex(String tableName) {
         validateTableName(tableName);
+        String qualifiedName = TABLE_SCHEMA_MAP.getOrDefault(tableName, tableName);
 
         MaintenanceLog entry = new MaintenanceLog();
         entry.setOperation("REINDEX");
@@ -356,8 +382,9 @@ public class DatabaseMaintenanceService {
 
         long start = System.currentTimeMillis();
         try {
-            // tableName proviene del whitelist ALLOWED_TABLES — seguro contra SQL injection
-            String sql = "REINDEX TABLE " + tableName;
+            // qualifiedName proviene del whitelist TABLE_SCHEMA_MAP — seguro contra SQL
+            // injection
+            String sql = "REINDEX TABLE " + qualifiedName;
             log.info("[Maintenance] Iniciando REINDEX TABLE '{}' manual...",
                     LogSanitizer.sanitize(tableName));
             jdbc.execute(sql);
@@ -389,10 +416,181 @@ public class DatabaseMaintenanceService {
      */
     public void runAnalyze(String tableName) {
         validateTableName(tableName);
-        String sql = "ANALYZE " + tableName;
+        String qualifiedName = TABLE_SCHEMA_MAP.getOrDefault(tableName, tableName);
+        String sql = "ANALYZE " + qualifiedName;
         log.info("[Maintenance] Iniciando ANALYZE en tabla '{}'...", LogSanitizer.sanitize(tableName));
         jdbc.execute(sql);
         log.info("[Maintenance] ANALYZE completado en tabla '{}'", LogSanitizer.sanitize(tableName));
+    }
+
+    /**
+     * Ejecuta {@code ANALYZE} sobre una tabla y registra el resultado en
+     * {@code maintenance_logs}. Usado por el controlador para el botón por fila.
+     *
+     * @param tableName nombre de la tabla
+     * @throws IllegalArgumentException si el nombre de tabla no está en el
+     *                                  whitelist
+     */
+    public void runAnalyzeWithLog(String tableName) {
+        validateTableName(tableName);
+        String qualifiedName = TABLE_SCHEMA_MAP.getOrDefault(tableName, tableName);
+
+        MaintenanceLog entry = new MaintenanceLog();
+        entry.setOperation("ANALYZE");
+        entry.setTargetName(tableName);
+        entry.setTargetType("TABLE");
+        entry.setExecutedBy(currentUsername());
+        entry.setExecutedAt(LocalDateTime.now());
+        entry.setStatus("IN_PROGRESS");
+        entry = logRepository.save(entry);
+
+        long start = System.currentTimeMillis();
+        try {
+            String sql = "ANALYZE " + qualifiedName;
+            log.info("[Maintenance] Iniciando ANALYZE con log en tabla '{}'...",
+                    LogSanitizer.sanitize(tableName));
+            jdbc.execute(sql);
+            long duration = System.currentTimeMillis() - start;
+            entry.setDurationMs((int) duration);
+            entry.setStatus("SUCCESS");
+            logRepository.save(entry);
+            log.info("[Maintenance] ANALYZE completado en tabla '{}' en {} ms",
+                    LogSanitizer.sanitize(tableName), duration);
+        } catch (Exception e) {
+            entry.setDurationMs((int) (System.currentTimeMillis() - start));
+            entry.setStatus("ERROR");
+            entry.setErrorMessage(e.getMessage());
+            logRepository.save(entry);
+            log.error("[Maintenance] Error en ANALYZE '{}': {}",
+                    LogSanitizer.sanitize(tableName), e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Ejecuta {@code ANALYZE} (sin nombre de tabla) sobre la base de datos
+     * completa. Operación ligera; PostgreSQL la planifica en background y
+     * no bloquea tablas.
+     * Registra una entrada en {@code maintenance_logs} con targetName =
+     * "ALL_TABLES".
+     */
+    public void runAnalyzeAll() {
+        MaintenanceLog entry = new MaintenanceLog();
+        entry.setOperation("ANALYZE");
+        entry.setTargetName("ALL_TABLES");
+        entry.setTargetType("TABLE");
+        entry.setExecutedBy(currentUsername());
+        entry.setExecutedAt(LocalDateTime.now());
+        entry.setStatus("IN_PROGRESS");
+        entry = logRepository.save(entry);
+
+        long start = System.currentTimeMillis();
+        try {
+            log.info("[Maintenance] Iniciando ANALYZE global (todas las tablas)...");
+            jdbc.execute("ANALYZE");
+            long duration = System.currentTimeMillis() - start;
+            entry.setDurationMs((int) duration);
+            entry.setStatus("SUCCESS");
+            logRepository.save(entry);
+            log.info("[Maintenance] ANALYZE global completado en {} ms", duration);
+        } catch (Exception e) {
+            entry.setDurationMs((int) (System.currentTimeMillis() - start));
+            entry.setStatus("ERROR");
+            entry.setErrorMessage(e.getMessage());
+            logRepository.save(entry);
+            log.error("[Maintenance] Error en ANALYZE global: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Versión de {@link #runVacuum(String)} que acepta un ejecutor externo
+     * (p.ej. "SISTEMA_AUTOMATICO") en lugar de usar el SecurityContext.
+     * Llamado exclusivamente por {@link MaintenanceSchedulerService}.
+     *
+     * @param tableName nombre de la tabla (validado contra whitelist)
+     * @param executor  identificador del ejecutor para el log
+     */
+    public void runVacuumSilent(String tableName, String executor) {
+        validateTableName(tableName);
+        String qualifiedName = TABLE_SCHEMA_MAP.getOrDefault(tableName, tableName);
+
+        long start = System.currentTimeMillis();
+        try {
+            String sql = "VACUUM ANALYZE " + qualifiedName;
+            jdbc.execute(sql);
+            log.info("[Maintenance/Auto] VACUUM ANALYZE en '{}' completado en {} ms",
+                    LogSanitizer.sanitize(tableName), System.currentTimeMillis() - start);
+        } catch (Exception e) {
+            log.error("[Maintenance/Auto] Error en VACUUM ANALYZE '{}': {}",
+                    LogSanitizer.sanitize(tableName), e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Ejecuta {@code VACUUM ANALYZE} sobre una tabla y registra el resultado
+     * en {@code maintenance_logs}, usando un nombre de ejecutor externo
+     * (no depende del SecurityContext).
+     *
+     * <p>
+     * Diseñado para ser llamado por el motor de automatizaciones
+     * ({@code DB_MAINTENANCE_JOB}) donde no hay un usuario autenticado.
+     * </p>
+     *
+     * @param tableName nombre de la tabla (validado contra whitelist)
+     * @param executor  identificador del ejecutor (ej. "SYSTEM_AUTOMATION")
+     */
+    public void runVacuumWithLog(String tableName, String executor) {
+        validateTableName(tableName);
+        String qualifiedName = TABLE_SCHEMA_MAP.getOrDefault(tableName, tableName);
+
+        Integer deadBefore = queryDeadTuples(tableName);
+
+        MaintenanceLog entry = new MaintenanceLog();
+        entry.setOperation("VACUUM_ANALYZE");
+        entry.setTargetName(tableName);
+        entry.setTargetType("TABLE");
+        entry.setExecutedBy(executor);
+        entry.setExecutedAt(LocalDateTime.now());
+        entry.setRowsBefore(deadBefore);
+        entry.setStatus("IN_PROGRESS");
+        entry = logRepository.save(entry);
+
+        long start = System.currentTimeMillis();
+        try {
+            String sql = "VACUUM ANALYZE " + qualifiedName;
+            log.info("[Maintenance/Auto] Iniciando VACUUM ANALYZE en tabla '{}'...",
+                    LogSanitizer.sanitize(tableName));
+            jdbc.execute(sql);
+            long duration = System.currentTimeMillis() - start;
+
+            Integer deadAfter = queryDeadTuples(tableName);
+            entry.setRowsAfter(deadAfter);
+            entry.setDurationMs((int) duration);
+            entry.setStatus("SUCCESS");
+            logRepository.save(entry);
+            log.info("[Maintenance/Auto] VACUUM ANALYZE '{}' completado en {} ms (dead tuples: {} → {})",
+                    LogSanitizer.sanitize(tableName), duration,
+                    deadBefore != null ? deadBefore : "?",
+                    deadAfter != null ? deadAfter : "?");
+        } catch (Exception e) {
+            entry.setDurationMs((int) (System.currentTimeMillis() - start));
+            entry.setStatus("ERROR");
+            entry.setErrorMessage(e.getMessage());
+            logRepository.save(entry);
+            log.error("[Maintenance/Auto] Error en VACUUM ANALYZE '{}': {}",
+                    LogSanitizer.sanitize(tableName), e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Expone {@link #queryDeadTuples(String)} para el scheduler automático,
+     * que necesita saber los dead tuples antes/después del VACUUM.
+     */
+    public Integer queryDeadTuplesPublic(String tableName) {
+        return queryDeadTuples(tableName);
     }
 
     /**

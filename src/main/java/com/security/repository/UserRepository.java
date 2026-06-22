@@ -1,7 +1,9 @@
 package com.security.repository;
 
 import com.security.entity.User;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,7 +15,9 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-        // Métodos para autenticación (CORREGIDOS)
+        // Métodos para autenticación — @EntityGraph carga roles + permisos en un solo
+        // JOIN
+        @EntityGraph(attributePaths = { "roles", "roles.permissions" })
         Optional<User> findByEmail(String email);
 
         // Verificar existencia
@@ -21,7 +25,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
         boolean existsByUsername(String username);
 
-        // Búsqueda por username
+        // Búsqueda por username — también necesita roles + permisos para auth
+        @EntityGraph(attributePaths = { "roles", "roles.permissions" })
         Optional<User> findByUsername(String username);
 
         // Métodos para estado del usuario
@@ -38,6 +43,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
         @Query("SELECT u FROM User u WHERE u.email LIKE %:searchTerm% OR u.firstName LIKE %:searchTerm% OR u.lastName LIKE %:searchTerm%")
         List<User> findByEmailOrNameContaining(@Param("searchTerm") String searchTerm);
 
+        @EntityGraph(attributePaths = { "roles" })
         @Query("SELECT u FROM User u JOIN u.roles r WHERE r.name = :roleName")
         List<User> findByRoleName(@Param("roleName") String roleName);
 
@@ -70,12 +76,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
         /**
          * Buscar usuarios Staff paginados
          */
+        @EntityGraph(attributePaths = { "roles" })
         @Query("SELECT u FROM User u WHERE u.isCustomer = false ORDER BY u.createdAt DESC")
         org.springframework.data.domain.Page<User> findAllStaff(org.springframework.data.domain.Pageable pageable);
 
         /**
          * Buscar usuarios Staff con filtros
          */
+        @EntityGraph(attributePaths = { "roles" })
         @Query("SELECT u FROM User u WHERE u.isCustomer = false AND " +
                         "(:enabled IS NULL OR u.enabled = :enabled) AND " +
                         "(:accountNonLocked IS NULL OR u.accountNonLocked = :accountNonLocked) AND " +
@@ -109,13 +117,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
          * Listar todos los clientes (is_customer = true) paginados, ordenados por
          * fecha de registro descendente.
          */
-        @Query("SELECT u FROM User u WHERE u.isCustomer = true ORDER BY u.createdAt DESC")
+        @EntityGraph(attributePaths = { "roles" })
+        @Query("SELECT u FROM User u WHERE u.isCustomer = true AND u.enabled = true ORDER BY u.createdAt DESC")
         org.springframework.data.domain.Page<User> findAllCustomers(org.springframework.data.domain.Pageable pageable);
 
         /**
          * Buscar clientes con filtros de búsqueda, estado habilitado y estado de
          * bloqueo. Los parámetros opcionales se ignoran cuando son NULL.
          */
+        @EntityGraph(attributePaths = { "roles" })
         @Query("SELECT u FROM User u WHERE u.isCustomer = true AND " +
                         "(:enabled IS NULL OR u.enabled = :enabled) AND " +
                         "(:accountNonLocked IS NULL OR u.accountNonLocked = :accountNonLocked) AND " +
@@ -147,8 +157,65 @@ public interface UserRepository extends JpaRepository<User, Long> {
          * paginados.
          * Usado por el endpoint de auditoría GET /api/admin/roles/{id}/users.
          */
+        @EntityGraph(attributePaths = { "roles" })
         @Query("SELECT u FROM User u JOIN u.roles r WHERE r.id = :roleId ORDER BY u.createdAt DESC")
         org.springframework.data.domain.Page<User> findByRolesId(
                         @Param("roleId") Long roleId,
                         org.springframework.data.domain.Pageable pageable);
+
+        /**
+         * Buscar un usuario con sus roles Y los permisos de cada rol (doble fetch).
+         * Usado para construir respuestas detalladas como AdminUserResponseDTO.
+         */
+        @EntityGraph(attributePaths = { "roles", "roles.permissions" })
+        @Query("SELECT u FROM User u WHERE u.id = :id")
+        Optional<User> findByIdWithRolesAndPermissions(@Param("id") Long id);
+
+        /**
+         * Buscar un usuario con sus roles (sin permisos).
+         * Usado por servicios que solo necesitan verificar roles del usuario (ej:
+         * RBACService).
+         */
+        @EntityGraph(attributePaths = { "roles" })
+        @Query("SELECT u FROM User u WHERE u.id = :id")
+        Optional<User> findByIdWithRoles(@Param("id") Long id);
+
+        /**
+         * Obtener empleados activos (habilitados y no bloqueados) para el selector
+         * de destinatarios de notificaciones en automatizaciones.
+         * Excluye clientes (isCustomer = false).
+         */
+        @EntityGraph(attributePaths = { "roles" })
+        @Query("SELECT u FROM User u WHERE u.isCustomer = false AND u.enabled = true AND u.accountNonLocked = true ORDER BY u.firstName ASC")
+        List<User> findActiveStaffMembers();
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // Ghost Users — Cleanup Job
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /**
+         * Encontrar IDs de "usuarios fantasma": cuentas no verificadas (enabled=false)
+         * creadas antes del punto de corte, sin pedidos realizados.
+         * Se excluyen usuarios con totalOrders > 0 para evitar borrar cuentas con
+         * actividad real.
+         */
+        @Query("SELECT u.id FROM User u WHERE u.enabled = false AND u.createdAt < :cutoff")
+        List<Long> findGhostUserIds(@Param("cutoff") LocalDateTime cutoff);
+
+        /**
+         * Eliminar las filas de la tabla intermedia user_roles para los IDs indicados.
+         * Se usa una query nativa porque @ManyToMany no tiene CascadeType.REMOVE.
+         */
+        @Modifying
+        @Query(value = "DELETE FROM auth.user_roles WHERE user_id IN :userIds", nativeQuery = true)
+        void deleteUserRolesByUserIds(@Param("userIds") List<Long> userIds);
+
+        /**
+         * Eliminar usuarios por sus IDs (batch delete).
+         * PRECONDICIÓN: todas las FK hijas (tokens, user_roles) deben haberse
+         * eliminado previamente.
+         */
+        @Modifying
+        @Query("DELETE FROM User u WHERE u.id IN :userIds")
+        void deleteByIdIn(@Param("userIds") List<Long> userIds);
 }

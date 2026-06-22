@@ -7,7 +7,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "verification_tokens")
+@Table(name = "verification_tokens", schema = "auth")
 public class VerificationToken {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

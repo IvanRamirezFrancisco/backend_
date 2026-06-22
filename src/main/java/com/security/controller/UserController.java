@@ -22,14 +22,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 
 @RestController
 @RequestMapping("/api/users")
 // CORS se maneja globalmente en SecurityConfig
 public class UserController {
-    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
+        private static final Logger logger = LoggerFactory.getLogger(UserController.class);
 
         @Autowired
         private UserService userService;
@@ -44,7 +43,7 @@ public class UserController {
          * Obtener perfil del usuario actual autenticado
          */
         @GetMapping("/profile")
-        @PreAuthorize("hasRole('USER')")
+        @PreAuthorize("isAuthenticated()")
         public ResponseEntity<?> getUserProfile(@CurrentUser UserPrincipal userPrincipal) {
                 try {
                         User user = userService.getUserById(userPrincipal.getId());
@@ -82,7 +81,7 @@ public class UserController {
          * Obtener configuración de seguridad del usuario
          */
         @GetMapping("/security-settings")
-        @PreAuthorize("hasRole('USER')")
+        @PreAuthorize("isAuthenticated()")
         public ResponseEntity<?> getSecuritySettings(@CurrentUser UserPrincipal userPrincipal) {
                 try {
                         User user = userService.getUserById(userPrincipal.getId());
@@ -145,30 +144,20 @@ public class UserController {
                         return ResponseEntity.ok(new ApiResponse(true, "Contraseña actualizada correctamente"));
 
                 } catch (Exception e) {
-                        logger.error("Error en change-password: " + e.getMessage());
-                        e.printStackTrace();
-                        return ResponseEntity.status(500)
-                                        .body(new ApiResponse(false, "Error interno del servidor"));
+                        logger.error("Error en change-password para usuario {}: {}", userPrincipal.getId(), e.getMessage());
+                return ResponseEntity.status(500)
+                                .body(new ApiResponse(false, "Error interno del servidor"));
                 }
         }
 
         /**
-         * ⚠️ ENDPOINT TEMPORAL PARA CREAR USUARIO ADMIN
-         * ⚠️ ELIMINAR O COMENTAR DESPUÉS DE CREAR EL ADMIN
-         * 
-         * Llama a este endpoint UNA VEZ con Postman o desde el navegador:
-         * POST http://localhost:8080/api/users/create-admin
-         * 
-         * Body JSON:
-         * {
-         * "firstName": "Admin",
-         * "lastName": "Principal",
-         * "email": "admin@casamusica.com",
-         * "password": "Admin123!",
-         * "phone": "1234567890"
-         * }
+         * Endpoint para crear el primer usuario ADMIN del sistema.
+         * SEGURIDAD: Solo un administrador existente puede crear otro administrador.
+         * Si no existe ningún admin aún, usar el script Flyway o una herramienta
+         * de BD directamente.
          */
         @PostMapping("/create-admin")
+        @PreAuthorize("hasRole('ROLE_ADMIN')")
         public ResponseEntity<?> createAdminUser(@RequestBody Map<String, String> request) {
                 try {
                         // Verificar si ya existe un admin con ese email
@@ -208,18 +197,15 @@ public class UserController {
                         response.put("roles", savedAdmin.getRoles().stream()
                                         .map(role -> role.getName().toString())
                                         .toArray());
-                        response.put("message", "✅ Usuario administrador creado exitosamente");
-                        response.put("credentials", Map.of(
-                                        "email", savedAdmin.getEmail(),
-                                        "password", request.get("password"),
-                                        "note", "Guarda estas credenciales de forma segura"));
-                        response.put("warning", "⚠️ AHORA COMENTA O ELIMINA ESTE ENDPOINT POR SEGURIDAD");
+                        response.put("message", "Usuario administrador creado exitosamente");
+
+                        logger.info("Nuevo administrador creado: ID={}", savedAdmin.getId());
 
                         return ResponseEntity.ok(new ApiResponse(true,
                                         "Admin user created successfully", response));
 
                 } catch (Exception e) {
-                        e.printStackTrace();
+                        logger.error("Error creando usuario admin", e);
                         return ResponseEntity.status(500)
                                         .body(new ApiResponse(false,
                                                         "Error creating admin user: " + e.getMessage()));

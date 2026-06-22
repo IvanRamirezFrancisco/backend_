@@ -1,5 +1,6 @@
 package com.security.dto.admin;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -28,16 +29,18 @@ import java.util.List;
  * @param alerts                 Alertas activas generadas automáticamente
  */
 public record DatabaseMetricsDto(
-                int healthScore,
-                long totalDatabaseSizeBytes,
-                long uptimeDays,
-                String postgresVersion,
-                int activeConnections,
-                double cacheHitRatio,
-                List<TableMetricDto> topTables,
-                PerformanceMetricsDto performance,
-                ConnectionInfoDto connections,
-                List<TableHealthDto> tableHealth,
-                List<IndexUsageDto> indexUsage,
-                List<DbAlertDto> alerts) {
+        int healthScore,
+        long totalDatabaseSizeBytes,
+        long uptimeDays,
+        String postgresVersion,
+        int activeConnections,
+        double cacheHitRatio,
+        List<TableMetricDto> topTables,
+        PerformanceMetricsDto performance,
+        ConnectionInfoDto connections,
+        List<TableHealthDto> tableHealth,
+        List<IndexUsageDto> indexUsage,
+        List<DbAlertDto> alerts,
+        int insufficientDataIndexCount,
+        LocalDateTime lastVacuumAny) {
 }

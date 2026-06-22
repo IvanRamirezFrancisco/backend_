@@ -167,3 +167,8 @@ replay_pid*
 # 3. Railway leerá application.yml y aplicará las variables
 # 4. Los secrets se configuran en el dashboard de Railway
 # ==================================================
+
+# ===== ARCHIVOS SUBIDOS (UPLOADS) =====
+uploads/products/
+uploads/brands/
+uploads/payment-proofs/

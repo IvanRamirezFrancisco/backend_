@@ -22,7 +22,7 @@ import java.util.List;
  * Incluye: items, pagos, envíos y estados
  */
 @Entity
-@Table(name = "orders", indexes = {
+@Table(name = "orders", schema = "sales", indexes = {
         @Index(name = "idx_order_user", columnList = "user_id"),
         @Index(name = "idx_order_status", columnList = "status"),
         @Index(name = "idx_order_date", columnList = "created_at"),
@@ -110,6 +110,12 @@ public class Order {
 
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
+
+    @Column(name = "cancelled_by")
+    private Long cancelledBy;
+
+    @Column(name = "cancel_source", length = 20)
+    private String cancelSource;
 
     @Column(name = "cancellation_reason", columnDefinition = "TEXT")
     private String cancellationReason;

@@ -20,6 +20,7 @@ spring:
       idle-timeout: 300000
       connection-timeout: 30000
       max-lifetime: 1200000
+      connection-init-sql: SET search_path TO public,auth,security,catalog,sales,customer,ops
 
   jpa:
     hibernate:
@@ -30,10 +31,13 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
+        default_schema: public
 
   flyway:
     enabled: true
     baseline-on-migrate: true
+    default-schema: public
+    schemas: public,auth,security,catalog,sales,customer,ops
 
   mail:
     host: ${MAIL_HOST:smtp-relay.brevo.com}
@@ -137,6 +141,19 @@ app:
 
   base-url: ${FRONTEND_URL:http://localhost:4200}
   
+  # ============================================================
+  # MERCADO PAGO CHECKOUT PRO
+  # ============================================================
+  mercadopago:
+    enabled: ${MERCADO_PAGO_ENABLED:true}
+    environment: ${MERCADO_PAGO_ENVIRONMENT:TEST}
+    access-token: ${MERCADO_PAGO_ACCESS_TOKEN:}
+    public-key: ${MERCADO_PAGO_PUBLIC_KEY:}
+    webhook-secret: ${MERCADO_PAGO_WEBHOOK_SECRET:}
+    frontend-base-url: ${FRONTEND_PUBLIC_URL:http://localhost:4200}
+    backend-base-url: ${APP_PUBLIC_URL:http://localhost:8080}
+  
+  
   # Configuración OAuth2.0
   oauth2:
     authorization-code-expiration: 600      # 10 minutos
@@ -174,6 +191,13 @@ supabase:
   url: ${SUPABASE_URL:https://dwdteqmfhclrtlknkwcd.supabase.co}
   service-key: ${SUPABASE_SERVICE_KEY:}
   bucket-name: ${SUPABASE_BUCKET:casamusica-backups}
+
+# ── Storage (Cloudinary / Local) ────────────────────────────────────────────
+storage:
+  provider: ${STORAGE_PROVIDER:CLOUDINARY}
+  local:
+    products-path: uploads/products
+    brands-path: uploads/brands
 
 logging:
   level:

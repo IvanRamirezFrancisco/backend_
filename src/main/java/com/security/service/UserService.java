@@ -15,6 +15,7 @@ import com.security.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -50,13 +51,80 @@ public class UserService {
     @Autowired
     private AuditLogService auditLogService;
 
+    /**
+     * Patrón UPSERT anti-enumeración para registro de usuarios.
+     *
+     * Tres ramas:
+     * 1. Email NO existe → creación normal (enabled=false, enviar verificación).
+     * 2. Email existe + enabled=false (ghost) → actualizar datos, regenerar token,
+     * reenviar email.
+     * 3. Email existe + enabled=true (activo) → retorno silencioso (sin email, sin
+     * error).
+     *
+     * En TODOS los casos la respuesta HTTP es 200 con mensaje genérico idéntico,
+     * impidiendo que un atacante determine si el email ya está registrado.
+     *
+     * @return el User persistido (nuevo o actualizado) — nunca null.
+     */
     public User createUser(RegisterRequest registerRequest) {
-        if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new BadRequestException("Email address already in use!");
+        Optional<User> existingOpt = userRepository.findByEmail(registerRequest.getEmail());
+
+        if (existingOpt.isPresent()) {
+            User existing = existingOpt.get();
+
+            if (Boolean.TRUE.equals(existing.getEnabled())) {
+                // ── Rama 3: usuario activo → retorno silencioso ──
+                // No enviar email, no lanzar excepción → respuesta idéntica al caso normal.
+                logger.info("Registro silencioso (usuario activo): {}", LogSanitizer.maskEmail(existing.getEmail()));
+                return existing;
+            }
+
+            // ── Rama 2: ghost user (enabled=false) → actualizar datos + reenviar
+            // verificación ──
+            logger.info("Registro upsert (ghost user): {}", LogSanitizer.maskEmail(existing.getEmail()));
+
+            existing.setUsername(registerRequest.getUsername());
+            existing.setFirstName(registerRequest.getFirstName());
+            existing.setLastName(registerRequest.getLastName());
+            existing.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
+            existing.setPhone(registerRequest.getPhone());
+            existing.setUpdatedAt(LocalDateTime.now());
+
+            User savedUser;
+            try {
+                savedUser = userRepository.save(existing);
+            } catch (DataIntegrityViolationException ex) {
+                // Username duplicado con otro usuario
+                logger.warn("Race condition en upsert: {}", LogSanitizer.maskEmail(registerRequest.getEmail()));
+                // Retorno silencioso para no revelar información
+                return existing;
+            }
+
+            // Eliminar tokens anteriores y crear uno nuevo
+            verificationTokenRepository.deleteByUser(savedUser);
+            createAndSendVerificationToken(savedUser);
+
+            return savedUser;
         }
 
+        // ── Rama 1: usuario nuevo → creación normal ──
+        // Validar username duplicado de forma preventiva (la protección real es el
+        // unique constraint)
         if (userRepository.existsByUsername(registerRequest.getUsername())) {
-            throw new BadRequestException("Username already in use!");
+            // Retorno silencioso para no revelar que el username existe
+            logger.info("Registro silencioso (username existente): {}",
+                    LogSanitizer.maskEmail(registerRequest.getEmail()));
+            // Crear un objeto User dummy para retornar respuesta uniforme
+            // No persistimos nada — simplemente devolvemos un user con los datos del
+            // request
+            User dummy = new User();
+            dummy.setId(0L);
+            dummy.setEmail(registerRequest.getEmail());
+            dummy.setFirstName(registerRequest.getFirstName());
+            dummy.setLastName(registerRequest.getLastName());
+            dummy.setEnabled(false);
+            dummy.setIsCustomer(true);
+            return dummy;
         }
 
         User user = new User();
@@ -73,8 +141,6 @@ public class UserService {
         user.setCredentialsNonExpired(true);
 
         // CRÍTICO: Los usuarios registrados públicamente son CLIENTES, no Staff.
-        // Sin esta línea el valor por defecto de la entidad es false → aparecerían como
-        // Staff.
         user.setIsCustomer(true);
 
         Role userRole = roleRepository.findByName("ROLE_USER")
@@ -82,31 +148,53 @@ public class UserService {
 
         user.setRoles(Collections.singleton(userRole));
 
-        // Guardar usuario primero
-        User savedUser = userRepository.save(user);
+        // Guardar usuario — protección contra race condition usando unique constraint
+        User savedUser;
+        try {
+            savedUser = userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            // Race condition: otro hilo insertó el mismo email/username
+            logger.warn("Race condition detectada en registro: {}", LogSanitizer.maskEmail(registerRequest.getEmail()));
+            // Retorno silencioso — no revelar información
+            User dummy = new User();
+            dummy.setId(0L);
+            dummy.setEmail(registerRequest.getEmail());
+            dummy.setFirstName(registerRequest.getFirstName());
+            dummy.setLastName(registerRequest.getLastName());
+            dummy.setEnabled(false);
+            dummy.setIsCustomer(true);
+            return dummy;
+        }
 
-        // Crear y guardar token de verificación
+        // Crear y enviar token de verificación
+        createAndSendVerificationToken(savedUser);
+
+        return savedUser;
+    }
+
+    /**
+     * Genera un token de verificación, lo persiste y envía el email.
+     * Método extraído para evitar duplicación entre las ramas del upsert.
+     */
+    private void createAndSendVerificationToken(User user) {
         String tokenValue = generateVerificationToken();
         VerificationToken verificationToken = new VerificationToken();
         verificationToken.setToken(tokenValue);
-        verificationToken.setUser(savedUser);
-        verificationToken.setTokenType(TokenType.EMAIL_VERIFICATION); // 🔴 USAR ENUM
+        verificationToken.setUser(user);
+        verificationToken.setTokenType(TokenType.EMAIL_VERIFICATION);
         verificationToken.setExpiryDate(LocalDateTime.now().plusHours(24));
-        verificationToken.setUsed(false); // 🔴 IMPORTANTE
+        verificationToken.setUsed(false);
         verificationTokenRepository.save(verificationToken);
 
-        // Enviar email de verificación
         try {
-            emailService.sendVerificationEmail(savedUser, tokenValue);
+            emailService.sendVerificationEmail(user, tokenValue);
             logger.info("Email de verificacion enviado a: {}",
-                    LogSanitizer.maskEmail(savedUser.getEmail()));
+                    LogSanitizer.maskEmail(user.getEmail()));
         } catch (Exception e) {
             logger.error("Error enviando email de verificacion a {}: {}",
-                    LogSanitizer.maskEmail(savedUser.getEmail()), e.getMessage());
+                    LogSanitizer.maskEmail(user.getEmail()), e.getMessage());
             // No fallar el registro, solo log del error
         }
-
-        return savedUser;
     }
 
     public boolean verifyEmailToken(String token) {
@@ -328,14 +416,22 @@ public class UserService {
         userResponse.setCreatedAt(user.getCreatedAt());
         userResponse.setUpdatedAt(user.getUpdatedAt());
 
-        // Obtener nombres de roles (ahora es String directamente)
+        // Nombres de roles (ej. ["ROLE_VR_DASHBOARD", "ROLE_ADMIN"])
         Set<String> roleNames = user.getRoles().stream()
                 .map(role -> role.getName())
                 .collect(Collectors.toSet());
         userResponse.setRoles(roleNames);
 
-        // <-- AGREGA ESTA LÍNEA
-        userResponse.setGoogleAuthEnabled(user.getGoogleAuthEnabled());
+        // Permisos granulares expandidos de TODOS los roles (ej. ["DASHBOARD_VIEW",
+        // "PRODUCT_READ"])
+        Set<String> permissionNames = user.getRoles().stream()
+                .flatMap(role -> role.getPermissions().stream())
+                .map(permission -> permission.getName())
+                .collect(Collectors.toSet());
+        userResponse.setPermissions(permissionNames);
+
+        // Flag de tipo de usuario: true = cliente, false = empleado/staff
+        userResponse.setIsCustomer(user.getIsCustomer());
 
         return userResponse;
     }

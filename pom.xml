@@ -208,6 +208,26 @@
             <artifactId>passay</artifactId>
             <version>1.6.2</version>
         </dependency>
+
+        <!-- Caffeine — caché en memoria con TTL para proteger consultas frecuentes -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- Cloudinary -->
+        <dependency>
+            <groupId>com.cloudinary</groupId>
+            <artifactId>cloudinary-http44</artifactId>
+            <version>1.36.0</version>
+        </dependency>
+        
+        <!-- Mercado Pago SDK Oficial -->
+        <dependency>
+            <groupId>com.mercadopago</groupId>
+            <artifactId>sdk-java</artifactId>
+            <version>3.2.0</version>
+        </dependency>
     </dependencies>    <build>
         <plugins>
             <!-- Compilador con soporte explícito para Lombok (Java 21) -->

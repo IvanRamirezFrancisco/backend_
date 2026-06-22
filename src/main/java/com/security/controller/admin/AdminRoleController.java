@@ -30,7 +30,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/roles")
-@CrossOrigin(origins = { "http://localhost:4200", "https://login.up.railway.app" }, allowCredentials = "true")
 public class AdminRoleController {
 
     @Autowired
@@ -41,7 +40,7 @@ public class AdminRoleController {
      * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN
      */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_READ')")
     public ResponseEntity<List<RoleResponseDTO>> getAllRoles() {
         List<RoleResponseDTO> roles = adminRoleService.getAllRoles();
         return ResponseEntity.ok(roles);
@@ -52,7 +51,7 @@ public class AdminRoleController {
      * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN
      */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_READ')")
     public ResponseEntity<RoleResponseDTO> getRoleById(@PathVariable Long id) {
         RoleResponseDTO role = adminRoleService.getRoleById(id);
         return ResponseEntity.ok(role);
@@ -63,7 +62,7 @@ public class AdminRoleController {
      * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN
      */
     @GetMapping("/permissions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_READ')")
     public ResponseEntity<List<PermissionDTO>> getAllPermissions() {
         List<PermissionDTO> permissions = adminRoleService.getAllPermissions();
         return ResponseEntity.ok(permissions);
@@ -75,7 +74,7 @@ public class AdminRoleController {
      * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN
      */
     @GetMapping("/permissions/by-category")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_READ')")
     public ResponseEntity<Map<String, List<PermissionDTO>>> getPermissionsByCategory() {
         Map<String, List<PermissionDTO>> permissionsByCategory = adminRoleService.getPermissionsByCategory();
         return ResponseEntity.ok(permissionsByCategory);
@@ -86,7 +85,7 @@ public class AdminRoleController {
      * Requiere: ROLE_SUPER_ADMIN (solo super admins pueden crear roles)
      */
     @PostMapping
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_CREATE')")
     public ResponseEntity<Map<String, Object>> createRole(@Valid @RequestBody RoleCreateDTO dto) {
         RoleResponseDTO createdRole = adminRoleService.createRole(dto);
 
@@ -103,7 +102,7 @@ public class AdminRoleController {
      * Reemplaza todos los permisos actuales con los nuevos
      */
     @PutMapping("/{id}/permissions")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_ASSIGN')")
     public ResponseEntity<Map<String, Object>> updateRolePermissions(
             @PathVariable Long id,
             @Valid @RequestBody RoleUpdatePermissionsDTO dto) {
@@ -123,7 +122,7 @@ public class AdminRoleController {
      * No elimina los permisos existentes, solo agrega nuevos
      */
     @PostMapping("/{id}/permissions/add")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_ASSIGN')")
     public ResponseEntity<Map<String, Object>> addPermissionsToRole(
             @PathVariable Long id,
             @RequestBody Map<String, java.util.Set<Long>> payload) {
@@ -148,7 +147,7 @@ public class AdminRoleController {
      * Valida que el rol no se quede sin permisos
      */
     @DeleteMapping("/{id}/permissions/remove")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_ASSIGN')")
     public ResponseEntity<Map<String, Object>> removePermissionsFromRole(
             @PathVariable Long id,
             @RequestBody Map<String, java.util.Set<Long>> payload) {
@@ -171,7 +170,7 @@ public class AdminRoleController {
      * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN.
      */
     @GetMapping("/{id}/users-count")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_READ')")
     public ResponseEntity<Map<String, Object>> countUsersWithRole(@PathVariable Long id) {
         Long userCount = adminRoleService.countUsersWithRole(id);
 
@@ -191,7 +190,7 @@ public class AdminRoleController {
      * 2. No se puede eliminar un rol con usuarios asignados (safe-delete).
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DELETE')")
     public ResponseEntity<Map<String, Object>> deleteRole(@PathVariable Long id) {
         adminRoleService.deleteRole(id);
 
@@ -208,7 +207,7 @@ public class AdminRoleController {
      * Parámetros: page (default 0), size (default 10)
      */
     @GetMapping("/{id}/users")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_READ')")
     public ResponseEntity<Page<AdminUserListDTO>> getUsersByRole(
             @PathVariable Long id,
             @RequestParam(defaultValue = "0") int page,

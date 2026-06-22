@@ -1,9 +1,12 @@
 package com.security.controller.admin;
 
+import com.security.dto.admin.MaintenanceConfigDto;
 import com.security.dto.admin.MaintenanceLogDto;
 import com.security.dto.admin.TableMaintenanceDto;
 import com.security.service.DatabaseMaintenanceService;
+import com.security.service.MaintenanceSchedulerService;
 import com.security.util.LogSanitizer;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +14,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -37,15 +42,19 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/database/maintenance")
-@PreAuthorize("hasRole('SUPER_ADMIN')")
+@PreAuthorize("hasAuthority('DATABASE_MAINTAIN')")
 public class AdminDbMaintenanceController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminDbMaintenanceController.class);
 
     private final DatabaseMaintenanceService maintenanceService;
+    private final MaintenanceSchedulerService schedulerService;
 
-    public AdminDbMaintenanceController(DatabaseMaintenanceService maintenanceService) {
+    public AdminDbMaintenanceController(
+            DatabaseMaintenanceService maintenanceService,
+            MaintenanceSchedulerService schedulerService) {
         this.maintenanceService = maintenanceService;
+        this.schedulerService = schedulerService;
     }
 
     // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -104,7 +113,8 @@ public class AdminDbMaintenanceController {
 
     /**
      * Ejecuta {@code ANALYZE} sobre la tabla especificada (solo actualiza
-     * estadísticas del planificador, sin limpiar dead tuples).
+     * estadísticas del planificador, sin limpiar dead tuples) y registra
+     * la operación en el historial.
      *
      * @param tableName nombre de la tabla
      * @return 200 OK con mensaje de éxito y timestamp de ejecución
@@ -112,11 +122,81 @@ public class AdminDbMaintenanceController {
     @PostMapping("/analyze/{tableName}")
     public ResponseEntity<Map<String, Object>> runAnalyze(@PathVariable String tableName) {
         log.info("[Admin] Ejecutando ANALYZE en tabla '{}'...", LogSanitizer.sanitize(tableName));
-        maintenanceService.runAnalyze(tableName);
+        maintenanceService.runAnalyzeWithLog(tableName);
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "operation", "ANALYZE " + tableName,
                 "message", "ANALYZE ejecutado correctamente en la tabla '" + tableName + "'.",
+                "executedAt", LocalDateTime.now().toString()));
+    }
+
+    /**
+     * Ejecuta {@code ANALYZE} global sobre todas las tablas de la base de datos.
+     * Operación ligera, no bloquea tablas.
+     *
+     * @return 200 OK con mensaje de éxito
+     */
+    @PostMapping("/analyze-all")
+    public ResponseEntity<Map<String, Object>> runAnalyzeAll() {
+        log.info("[Admin] Ejecutando ANALYZE global...");
+        maintenanceService.runAnalyzeAll();
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "operation", "ANALYZE (todas las tablas)",
+                "message", "ANALYZE ejecutado correctamente en todas las tablas.",
+                "executedAt", LocalDateTime.now().toString()));
+    }
+
+    // ── Endpoints de Automatización ─────────────────────────────────────────
+
+    /**
+     * Devuelve la configuración actual del programador de mantenimiento automático.
+     *
+     * @return 200 OK con {@link MaintenanceConfigDto}
+     */
+    @GetMapping("/automation")
+    public ResponseEntity<MaintenanceConfigDto> getAutomationConfig() {
+        log.info("[Admin] Solicitud de configuración de automatización de mantenimiento");
+        return ResponseEntity.ok(schedulerService.getConfig());
+    }
+
+    /**
+     * Actualiza la configuración del programador de mantenimiento automático.
+     *
+     * <p>
+     * Validaciones de seguridad aplicadas:
+     * <ul>
+     * <li>frequencyHours: 1–24</li>
+     * <li>preferredHour: 0–23</li>
+     * <li>vacuumThresholdDeadTuples: 1–10 000</li>
+     * <li>vacuumThresholdBloatPct: 1–100 %</li>
+     * </ul>
+     * </p>
+     *
+     * @param dto nueva configuración validada
+     * @return 200 OK con la configuración actualizada
+     */
+    @PutMapping("/automation")
+    public ResponseEntity<MaintenanceConfigDto> updateAutomationConfig(
+            @Valid @RequestBody MaintenanceConfigDto dto) {
+        log.info("[Admin] Actualizando configuración de automatización: enabled={}, freq={}h",
+                dto.enabled(), dto.frequencyHours());
+        return ResponseEntity.ok(schedulerService.updateConfig(dto));
+    }
+
+    /**
+     * Ejecuta el ciclo de mantenimiento automático de forma inmediata,
+     * sin esperar la próxima ejecución programada.
+     *
+     * @return 200 OK
+     */
+    @PostMapping("/automation/run-now")
+    public ResponseEntity<Map<String, Object>> runAutomationNow() {
+        log.info("[Admin] Ejecución inmediata del mantenimiento automático solicitada");
+        schedulerService.runNow();
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Mantenimiento automático ejecutado correctamente.",
                 "executedAt", LocalDateTime.now().toString()));
     }
 

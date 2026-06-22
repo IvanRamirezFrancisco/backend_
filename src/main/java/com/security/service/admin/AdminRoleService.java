@@ -49,6 +49,18 @@ public class AdminRoleService {
                         "ROLE_ADMIN",
                         "ROLE_USER");
 
+        /**
+         * Permisos sensibles que solo pueden ser asignados por SUPER_ADMIN.
+         * Si un usuario con rol ADMIN u otro intenta crear/actualizar un rol
+         * incluyendo alguno de estos permisos, se lanzará una excepción.
+         */
+        private static final Set<String> ADMIN_ONLY_PERMISSIONS = Set.of(
+                        "ROLE_CREATE", "ROLE_UPDATE", "ROLE_DELETE",
+                        "PERMISSION_ASSIGN",
+                        "USER_DELETE", "USER_MANAGE_ROLES",
+                        "DATABASE_BACKUP", "DATABASE_MAINTAIN", "DATABASE_AUTOMATE",
+                        "SYSTEM_SETTINGS");
+
         private static final Logger logger = LoggerFactory.getLogger(AdminRoleService.class);
 
         @Autowired
@@ -143,6 +155,10 @@ public class AdminRoleService {
                         throw new IllegalArgumentException("Debe asignar al menos un permiso al rol.");
                 }
 
+                // Regla de seguridad: permisos sensibles solo pueden ser asignados por
+                // SUPER_ADMIN
+                validateAdminOnlyPermissions(permissions);
+
                 // Crear y persistir el nuevo rol
                 Role newRole = new Role();
                 newRole.setName(normalizedName);
@@ -197,6 +213,10 @@ public class AdminRoleService {
                         throw new IllegalArgumentException("Debe asignar al menos un permiso al rol.");
                 }
 
+                // Regla de seguridad: permisos sensibles solo pueden ser asignados por
+                // SUPER_ADMIN
+                validateAdminOnlyPermissions(newPermissions);
+
                 String oldPermissions = role.getPermissions().stream()
                                 .map(Permission::getName)
                                 .collect(Collectors.joining(", "));
@@ -241,6 +261,10 @@ public class AdminRoleService {
                                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                                 "Permiso no encontrado con ID: " + permId)))
                                 .collect(Collectors.toSet());
+
+                // Regla de seguridad: permisos sensibles solo pueden ser asignados por
+                // SUPER_ADMIN
+                validateAdminOnlyPermissions(permissionsToAdd);
 
                 permissionsToAdd.forEach(role::addPermission);
                 Role updatedRole = roleRepository.save(role);
@@ -330,7 +354,7 @@ public class AdminRoleService {
                 }
 
                 // Regla de oro 2: safe-delete
-                long usersCount = (long) role.getUsers().size();
+                long usersCount = roleRepository.countUsersByRoleId(roleId);
                 if (usersCount > 0) {
                         throw new IllegalStateException(
                                         "No se puede eliminar el rol '" + role.getName() + "' porque tiene "
@@ -356,11 +380,11 @@ public class AdminRoleService {
          */
         @Transactional(readOnly = true)
         public Long countUsersWithRole(Long roleId) {
-                Role role = roleRepository.findById(roleId)
+                roleRepository.findById(roleId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Rol no encontrado con ID: " + roleId));
 
-                return (long) role.getUsers().size();
+                return roleRepository.countUsersByRoleId(roleId);
         }
 
         /**
@@ -428,7 +452,7 @@ public class AdminRoleService {
                                 .collect(Collectors.toSet());
                 dto.setPermissions(permissionsDTO);
 
-                dto.setUserCount((long) role.getUsers().size());
+                dto.setUserCount(roleRepository.countUsersByRoleId(role.getId()));
 
                 return dto;
         }
@@ -452,5 +476,41 @@ public class AdminRoleService {
         private String getCurrentUsername() {
                 Authentication auth = SecurityContextHolder.getContext().getAuthentication();
                 return auth != null ? auth.getName() : "SYSTEM";
+        }
+
+        /**
+         * Verifica si el usuario autenticado actual tiene el rol SUPER_ADMIN.
+         */
+        private boolean isCurrentUserSuperAdmin() {
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                if (auth == null)
+                        return false;
+                return auth.getAuthorities().stream()
+                                .anyMatch(a -> "ROLE_SUPER_ADMIN".equals(a.getAuthority()));
+        }
+
+        /**
+         * Valida que los permisos solicitados no incluyan permisos sensibles
+         * (ADMIN_ONLY_PERMISSIONS) a menos que el usuario actual sea SUPER_ADMIN.
+         * 
+         * @param permissions conjunto de permisos a validar
+         * @throws IllegalArgumentException si un no-SUPER_ADMIN intenta asignar
+         *                                  permisos sensibles
+         */
+        private void validateAdminOnlyPermissions(Set<Permission> permissions) {
+                if (isCurrentUserSuperAdmin()) {
+                        return; // SUPER_ADMIN puede asignar cualquier permiso
+                }
+
+                Set<String> restrictedFound = permissions.stream()
+                                .map(Permission::getName)
+                                .filter(ADMIN_ONLY_PERMISSIONS::contains)
+                                .collect(Collectors.toSet());
+
+                if (!restrictedFound.isEmpty()) {
+                        throw new IllegalArgumentException(
+                                        "Los siguientes permisos solo pueden ser asignados por un SUPER_ADMIN: "
+                                                        + String.join(", ", restrictedFound));
+                }
         }
 }

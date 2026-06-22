@@ -12,6 +12,8 @@ import com.security.security.UserPrincipal;
 import com.security.service.TwoFactorService;
 import com.security.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,8 +29,9 @@ import com.security.service.BackupCodeService;
 
 @RestController
 @RequestMapping("/api/2fa")
-// CORS se maneja globalmente en SecurityConfig - No usar @CrossOrigin aquí
 public class TwoFactorController {
+
+    private static final Logger log = LoggerFactory.getLogger(TwoFactorController.class);
 
     @Autowired
     private TwoFactorService twoFactorService;
@@ -44,9 +47,7 @@ public class TwoFactorController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse> enableGoogleAuthenticator(@AuthenticationPrincipal UserPrincipal userPrincipal) {
         try {
-            // Llama al servicio para generar el secreto y el QR
             Map<String, Object> setupInfo = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
-
             return ResponseEntity
                     .ok(new ApiResponse(true, "Google Authenticator setup initiated. Scan QR code.", setupInfo));
         } catch (Exception e) {
@@ -56,7 +57,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/google/disable")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> disableGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
         try {
             twoFactorService.disableSpecificTwoFactor(userPrincipal.getId(), "GOOGLE_AUTHENTICATOR");
@@ -71,7 +72,7 @@ public class TwoFactorController {
     // ===== EMAIL 2FA =====
 
     @PostMapping("/email/enable")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> enableEmail2FA(@CurrentUser UserPrincipal userPrincipal) {
         try {
             twoFactorService.enableEmailTwoFactor(userPrincipal.getId());
@@ -84,7 +85,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/email/disable")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> disableEmail2FA(@CurrentUser UserPrincipal userPrincipal) {
         try {
             twoFactorService.disableSpecificTwoFactor(userPrincipal.getId(), "EMAIL");
@@ -97,12 +98,10 @@ public class TwoFactorController {
     }
 
     @PostMapping("/google/setup")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> setupGoogleAuthenticator(@CurrentUser UserPrincipal userPrincipal) {
         try {
-            // Setup completo en una sola llamada
             Map<String, Object> setupData = twoFactorService.setupGoogleAuthenticatorComplete(userPrincipal.getId());
-
             return ResponseEntity.ok(new ApiResponse(true,
                     "Google Authenticator configurado exitosamente. Escanea el QR con tu app y confirma con un código de 6 dígitos.",
                     setupData));
@@ -113,10 +112,9 @@ public class TwoFactorController {
     }
 
     @GetMapping("/google/qrcode")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getQRCode(@CurrentUser UserPrincipal userPrincipal) {
         try {
-            // Validar que el usuario tenga un secreto configurado
             User user = userService.getUserById(userPrincipal.getId());
             if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
                 return ResponseEntity.badRequest()
@@ -141,7 +139,7 @@ public class TwoFactorController {
     }
 
     @GetMapping("/google/manual-code")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getManualCode(@CurrentUser UserPrincipal userPrincipal) {
         try {
             User user = userService.getUserById(userPrincipal.getId());
@@ -176,7 +174,6 @@ public class TwoFactorController {
                         .body(new ApiResponse(false, "Email and method are required"));
             }
 
-            // Buscar usuario por email
             Optional<User> userOptional = userService.findByEmail(email);
             if (!userOptional.isPresent()) {
                 return ResponseEntity.badRequest()
@@ -186,11 +183,9 @@ public class TwoFactorController {
             User user = userOptional.get();
 
             if ("EMAIL".equals(method)) {
-                // AUTO-HABILITAR Email 2FA si no está habilitado durante el login
                 if (user.getEmailEnabled() == null || !user.getEmailEnabled()) {
-                    System.out.println("📧 Auto-habilitando Email 2FA para login de usuario: " + user.getEmail());
+                    log.info("Auto-habilitando Email 2FA para usuario ID {}", user.getId());
                     twoFactorService.enableEmailTwoFactor(user.getId());
-                    // Recargar usuario después de habilitar
                     user = userService.getUserById(user.getId());
                 }
                 twoFactorService.sendEmailCode(user.getId());
@@ -201,9 +196,8 @@ public class TwoFactorController {
             }
 
         } catch (Exception e) {
-            // Manejo específico para errores de email
-            if (e.getMessage().contains("Connection timed out") ||
-                    e.getMessage().contains("Mail server connection failed")) {
+            if (e.getMessage() != null && (e.getMessage().contains("Connection timed out") ||
+                    e.getMessage().contains("Mail server connection failed"))) {
                 return ResponseEntity.status(503)
                         .body(new ApiResponse(false,
                                 "Error al enviar código 2FA por email. El servidor de correo no está disponible."));
@@ -217,87 +211,62 @@ public class TwoFactorController {
     public ResponseEntity<?> verifyTwoFactor(@RequestBody(required = false) Map<String, String> request,
             HttpServletRequest httpRequest) {
         String email = null;
-        String code = null;
         String method = null;
 
         try {
-            System.out.println("========================================");
-            System.out.println("🔐 INICIO VERIFICACIÓN 2FA");
-            System.out.println("========================================");
+            log.debug("Inicio verificación 2FA");
 
-            // Validar que el request no sea null
             if (request == null) {
-                System.out.println("❌ Request body es NULL");
+                log.warn("Request body nulo en /verify");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Request body es requerido"));
             }
 
-            System.out.println("📦 Request recibido: " + request);
-
             email = request.get("email");
-            code = request.get("code");
+            String code = request.get("code");
             method = request.get("method");
 
-            System.out.println("📧 Email: " + email);
-            System.out.println("🔑 Método: " + method);
-            System.out.println("🔢 Código: " + (code != null ? code : "NULL"));
+            log.debug("Verificación 2FA - método: {}", method);
 
             if (email == null || code == null || method == null) {
-                System.out.println("❌ Faltan parámetros");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Email, código y método son requeridos"));
             }
 
-            // Buscar usuario
-            System.out.println("🔍 Buscando usuario...");
             Optional<User> userOptional = userService.findByEmail(email);
             if (!userOptional.isPresent()) {
-                System.out.println("❌ Usuario no encontrado");
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Usuario no encontrado"));
             }
 
             User user = userOptional.get();
-            System.out.println("✅ Usuario ID: " + user.getId());
-
             boolean isValid = false;
 
             if ("GOOGLE_AUTHENTICATOR".equals(method)) {
-                System.out.println("� Verificando Google Authenticator...");
-
                 if (user.getGoogleAuthSecret() == null || user.getGoogleAuthSecret().isEmpty()) {
-                    System.out.println("❌ No tiene secret configurado");
                     return ResponseEntity.badRequest()
                             .body(new ApiResponse(false, "Google Authenticator no está configurado"));
                 }
-
-                System.out.println("🔐 Secret existe (length: " + user.getGoogleAuthSecret().length() + ")");
                 isValid = twoFactorService.verifyGoogleAuthenticatorForLogin(user.getId(), code);
 
             } else if ("EMAIL".equals(method)) {
-                System.out.println("� Verificando código email...");
                 isValid = twoFactorService.verifyEmailCode(user.getId(), code);
 
             } else if ("BACKUP_CODE".equals(method)) {
-                System.out.println("� Verificando backup code...");
                 isValid = twoFactorService.verifyBackupCode(user.getId(), code);
 
             } else {
-                System.out.println("❌ Método inválido: " + method);
+                log.warn("Método 2FA inválido recibido: {}", method);
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Método inválido"));
             }
 
-            System.out.println("📊 Resultado: " + (isValid ? "VÁLIDO ✅" : "INVÁLIDO ❌"));
-
             if (isValid) {
-                System.out.println("🎫 Generando JWT con sesión...");
+                log.info("Login 2FA exitoso para usuario ID {} usando método {}", user.getId(), method);
                 UserPrincipal userPrincipal = UserPrincipal.create(user);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userPrincipal, null, userPrincipal.getAuthorities());
 
-                // ✅ USAR MÉTODO CON SESIONES: incluye HttpServletRequest para crear sesión en
-                // BD
                 String token = jwtTokenProvider.generateToken(authentication, httpRequest);
 
                 JwtAuthResponse jwtResponse = new JwtAuthResponse();
@@ -315,34 +284,22 @@ public class TwoFactorController {
                 jwtResponse.setUser(userResponse);
                 jwtResponse.setTwoFactorRequired(false);
 
-                System.out.println("✅ LOGIN 2FA EXITOSO");
-                System.out.println("========================================");
                 return ResponseEntity.ok(new ApiResponse(true, "Autenticación exitosa", jwtResponse));
             } else {
-                System.out.println("❌ Código inválido");
-                System.out.println("========================================");
+                log.warn("Código 2FA inválido para usuario ID {} con método {}", user.getId(), method);
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Código de verificación inválido"));
             }
 
         } catch (Exception e) {
-            System.out.println("========================================");
-            System.out.println("❌❌❌ EXCEPCIÓN EN 2FA VERIFY ❌❌❌");
-            System.out.println("Tipo: " + e.getClass().getName());
-            System.out.println("Mensaje: " + e.getMessage());
-            System.out.println("Email: " + email);
-            System.out.println("Método: " + method);
-            e.printStackTrace(System.out);
-            System.out.println("========================================");
-
+            log.error("Excepción en /verify 2FA - método: {}, error: {}", method, e.getMessage(), e);
             return ResponseEntity.status(500)
-                    .body(new ApiResponse(false, "Error: " + e.getClass().getSimpleName() + " - " + e.getMessage()));
+                    .body(new ApiResponse(false, "Error interno al verificar el código 2FA"));
         }
     }
-    /////////////////////////////////////////////////
 
     @PostMapping("/google/confirm")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> confirmGoogleAuthenticator(
             @CurrentUser UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
@@ -353,7 +310,6 @@ public class TwoFactorController {
                         .body(new ApiResponse(false, "Código de verificación requerido"));
             }
 
-            // Validar formato del código (6 dígitos)
             if (!code.matches("\\d{6}")) {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "El código debe tener 6 dígitos"));
@@ -362,7 +318,6 @@ public class TwoFactorController {
             boolean isValid = twoFactorService.confirmGoogleAuthenticator(userPrincipal.getId(), code);
 
             if (isValid) {
-                // ✅ SOLO activar Google Auth - NO generar códigos de backup automáticamente
                 Map<String, Object> result = new HashMap<>();
                 result.put("message", "Google Authenticator habilitado exitosamente!");
                 result.put("googleAuthEnabled", true);
@@ -384,7 +339,7 @@ public class TwoFactorController {
     // ===== EMAIL 2FA =====
 
     @PostMapping("/email/send")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> sendEmailCode(@CurrentUser UserPrincipal userPrincipal) {
         try {
             twoFactorService.sendEmailCode(userPrincipal.getId());
@@ -397,7 +352,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/email/verify")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> verifyEmailCode(
             @CurrentUser UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
@@ -426,7 +381,7 @@ public class TwoFactorController {
     // ===== GENERAL =====
 
     @PostMapping("/disable")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> disableTwoFactor(@CurrentUser UserPrincipal userPrincipal) {
         try {
             twoFactorService.disableTwoFactor(userPrincipal.getId());
@@ -439,7 +394,7 @@ public class TwoFactorController {
     }
 
     @GetMapping("/status")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getTwoFactorStatus(@CurrentUser UserPrincipal userPrincipal) {
         try {
             User user = userService.getUserById(userPrincipal.getId());
@@ -460,7 +415,7 @@ public class TwoFactorController {
     // ===== NUEVOS ENDPOINTS PARA MÚLTIPLES MÉTODOS 2FA =====
 
     @PostMapping("/disable/{method}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> disableSpecificTwoFactor(
             @PathVariable String method,
             @CurrentUser UserPrincipal userPrincipal) {
@@ -475,7 +430,7 @@ public class TwoFactorController {
     }
 
     @GetMapping("/methods")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getAvailableTwoFactorMethods(@CurrentUser UserPrincipal userPrincipal) {
         try {
             Map<String, Boolean> methods = twoFactorService.getAvailableTwoFactorMethods(userPrincipal.getId());
@@ -488,21 +443,16 @@ public class TwoFactorController {
     }
 
     @GetMapping("/dashboard-summary")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getDashboardSummary(@CurrentUser UserPrincipal userPrincipal) {
         try {
             User user = userService.getUserById(userPrincipal.getId());
             Map<String, Boolean> methods = twoFactorService.getAvailableTwoFactorMethods(userPrincipal.getId());
 
             Map<String, Object> summary = new HashMap<>();
-
-            // Métodos individuales con su estado
             summary.put("methods", methods);
-
-            // Estado general de 2FA
             summary.put("twoFactorEnabled", user.getTwoFactorEnabled() != null ? user.getTwoFactorEnabled() : false);
 
-            // Información adicional para el dashboard
             Map<String, String> methodInfo = new HashMap<>();
             methodInfo.put("GOOGLE_AUTHENTICATOR", "Autenticación con app móvil (Google Authenticator, Authy, etc.)");
             methodInfo.put("SMS", "Códigos por mensaje de texto");
@@ -521,7 +471,7 @@ public class TwoFactorController {
     // ===== DEBUGGING ENDPOINTS =====
 
     @GetMapping("/debug/validate-totp")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> validateTotpFlow(@CurrentUser UserPrincipal userPrincipal) {
         try {
             Map<String, Object> validation = twoFactorService.validateCompleteTotp(userPrincipal.getId());
@@ -534,7 +484,7 @@ public class TwoFactorController {
     }
 
     @GetMapping("/debug/generate-test-code")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> generateTestCode(@CurrentUser UserPrincipal userPrincipal) {
         try {
             String currentCode = twoFactorService.generateCurrentValidCode(userPrincipal.getId());
@@ -558,7 +508,7 @@ public class TwoFactorController {
     // ===== BACKUP CODES =====
 
     @GetMapping("/backup-codes/status")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getBackupCodesStatus(@CurrentUser UserPrincipal userPrincipal) {
         try {
             Map<String, Object> status = backupCodeService.getBackupCodeStats(userPrincipal.getId());
@@ -571,10 +521,9 @@ public class TwoFactorController {
     }
 
     @PostMapping("/backup-codes/generate")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> generateBackupCodes(@CurrentUser UserPrincipal userPrincipal) {
         try {
-            // Generar códigos de backup usando el servicio especializado
             List<String> backupCodes = backupCodeService.generateBackupCodes(userPrincipal.getId());
 
             Map<String, Object> result = new HashMap<>();
@@ -595,7 +544,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/backup-codes/verify")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> verifyBackupCode(@CurrentUser UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
         try {
@@ -608,7 +557,6 @@ public class TwoFactorController {
             boolean isValid = backupCodeService.verifyBackupCode(userPrincipal.getId(), code);
 
             if (isValid) {
-                // Obtener estadísticas actualizadas
                 Map<String, Object> stats = backupCodeService.getBackupCodeStats(userPrincipal.getId());
 
                 Map<String, Object> result = new HashMap<>();
@@ -635,7 +583,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/backup-codes/disable")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> disableBackupCodes(@CurrentUser UserPrincipal userPrincipal) {
         try {
             backupCodeService.disableBackupCodes(userPrincipal.getId());

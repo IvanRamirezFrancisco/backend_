@@ -28,7 +28,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/database")
-@PreAuthorize("hasRole('SUPER_ADMIN')")
+@PreAuthorize("hasAuthority('DATABASE_VIEW')")
 public class AdminDbMonitoringController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminDbMonitoringController.class);

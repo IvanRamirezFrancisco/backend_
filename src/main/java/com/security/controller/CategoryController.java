@@ -105,7 +105,7 @@ public class CategoryController {
      * Solo ADMIN
      */
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('CATEGORY_MANAGE')")
     public ResponseEntity<?> createCategory(@Valid @RequestBody CategoryRequest request) {
         try {
             log.info("➕ Creando nueva categoría: {} (parentId: {})", request.getName(), request.getParentId());
@@ -139,7 +139,7 @@ public class CategoryController {
      * Solo ADMIN
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('CATEGORY_MANAGE')")
     public ResponseEntity<?> updateCategory(
             @PathVariable Long id,
             @Valid @RequestBody CategoryRequest request) {
@@ -182,7 +182,7 @@ public class CategoryController {
      * - Si está vacía → ÉXITO (borrado físico de la base de datos)
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('CATEGORY_MANAGE')")
     public ResponseEntity<?> deleteCategory(@PathVariable Long id) {
         try {
             log.info("🗑️ Intentando eliminar permanentemente categoría con ID: {}", id);

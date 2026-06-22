@@ -137,6 +137,29 @@ public class EmailService {
         sendViaSmtp(stub, subject, htmlContent);
     }
 
+    /**
+     * Envía el correo de invitación a un nuevo empleado.
+     * Usa la cadena de proveedores: Brevo → Resend → SMTP.
+     *
+     * @param toEmail       Email del empleado invitado
+     * @param firstName     Nombre del empleado
+     * @param invitedByName Nombre del administrador que invita
+     * @param token         Token de activación seguro
+     * @param hoursValid    Horas de validez del enlace
+     */
+    public void sendStaffInvitation(String toEmail, String firstName,
+            String invitedByName, String token, int hoursValid) {
+        logger.info("Enviando invitación de empleado a: {}", LogSanitizer.maskEmail(toEmail));
+
+        String frontendUrl = normalizeBaseUrl(baseUrl);
+        String activationUrl = frontendUrl + "/auth/accept-invitation/" + token;
+
+        String subject = "Invitación al Panel de Administración - Casa de Música Castillo";
+        String html = buildStaffInvitationTemplate(firstName, invitedByName, activationUrl, hoursValid);
+
+        sendHtmlEmail(toEmail, subject, html);
+    }
+
     // ============================================================================
     // PROVEEDORES DE ENVÍO (privados)
     // ============================================================================
@@ -378,5 +401,50 @@ public class EmailService {
                 </html>
                 """
                 .formatted(userName, code);
+    }
+
+    private String buildStaffInvitationTemplate(String firstName, String invitedByName,
+            String activationUrl, int hoursValid) {
+        return """
+                <!DOCTYPE html>
+                <html lang="es">
+                <head><meta charset="UTF-8"></head>
+                <body style="margin:0;padding:0;background:#f5f0eb;font-family:'Segoe UI',Arial,sans-serif;">
+                  <div style="max-width:560px;margin:40px auto;background:#FDFCFB;border-radius:12px;border:1px solid #E8E2DC;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+                    <div style="background:linear-gradient(135deg,#722f37,#8a3545);padding:32px 40px;text-align:center;">
+                      <h1 style="color:#fff;font-size:22px;margin:0;font-weight:600;">Casa de Música Castillo</h1>
+                      <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px;">Sistema de Administración</p>
+                    </div>
+                    <div style="padding:40px;">
+                      <h2 style="color:#1A1A1A;font-size:18px;margin:0 0 16px;font-weight:600;">¡Hola, %s!</h2>
+                      <p style="color:#6b7280;line-height:1.6;margin:0 0 24px;">
+                        <strong style="color:#1A1A1A;">%s</strong>
+                        te ha invitado a unirte al equipo de administración de Casa de Música Castillo.
+                      </p>
+                      <div style="text-align:center;margin:32px 0;">
+                        <a href="%s" style="background:linear-gradient(135deg,#722f37,#8a3545);color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">
+                          Activar mi cuenta
+                        </a>
+                      </div>
+                      <div style="background:#f5f0eb;border-radius:8px;padding:16px;margin:24px 0;">
+                        <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.8;">
+                          <span style="display:inline-block;width:18px;color:#722f37;font-weight:700;text-align:center;">&#9679;</span> Este enlace es válido por <strong>%d horas</strong>.<br>
+                          <span style="display:inline-block;width:18px;color:#722f37;font-weight:700;text-align:center;">&#9679;</span> Solo puedes usar este enlace una vez.<br>
+                          <span style="display:inline-block;width:18px;color:#722f37;font-weight:700;text-align:center;">&#9679;</span> Si no solicitaste esta invitación, ignora este correo.
+                        </p>
+                      </div>
+                      <p style="font-size:12px;color:#9ca3af;margin:16px 0 0;word-break:break-all;">
+                        Si el botón no funciona, copia este enlace:<br>
+                        <a href="%s" style="color:#722f37;">%s</a>
+                      </p>
+                    </div>
+                    <div style="padding:16px 40px;border-top:1px solid #E8E2DC;text-align:center;">
+                      <p style="margin:0;font-size:11px;color:#9ca3af;">© 2025 Casa de Música Castillo · Mensaje automático</p>
+                    </div>
+                  </div>
+                </body>
+                </html>
+                """
+                .formatted(firstName, invitedByName, activationUrl, hoursValid, activationUrl, activationUrl);
     }
 }

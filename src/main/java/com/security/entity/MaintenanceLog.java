@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * </p>
  */
 @Entity
-@Table(name = "maintenance_logs", indexes = {
+@Table(name = "maintenance_logs", schema = "ops", indexes = {
         @Index(name = "idx_ml_executed_at", columnList = "executed_at"),
         @Index(name = "idx_ml_target_name", columnList = "target_name"),
         @Index(name = "idx_ml_operation", columnList = "operation")

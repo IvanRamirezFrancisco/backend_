@@ -9,7 +9,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "roles")
+@Table(name = "roles", schema = "auth")
 public class Role {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,8 +37,8 @@ public class Role {
      * Relacion ManyToMany con Permissions
      * Un rol puede tener multiples permisos
      */
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "role_permissions", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "permission_id"))
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "role_permissions", schema = "auth", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "permission_id"))
     private Set<Permission> permissions = new HashSet<>();
 
     // Constructors

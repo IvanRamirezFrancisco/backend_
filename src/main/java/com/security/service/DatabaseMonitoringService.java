@@ -3,15 +3,20 @@ package com.security.service;
 import com.security.dto.admin.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,35 +50,10 @@ public class DatabaseMonitoringService {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseMonitoringService.class);
 
-    // ── Umbrales para alertas ────────────────────────────────────────────────
-    private static final double CACHE_HIT_WARN = 95.0; // por debajo → warning
-    private static final double CACHE_HIT_CRIT = 90.0; // por debajo → critical
-
     /**
-     * Umbral absoluto de dead tuples para estado 'critical' (dead &gt; 20 AND bloat
-     * &gt; 30%)
+     * Mínimo de registros vivos para recomendar REINDEX en el hint de la alerta.
+     * Por debajo de este valor la fragmentación es despreciable.
      */
-    private static final int DEAD_CRIT_ABSOLUTE = 20;
-    /** Porcentaje de bloat para estado 'critical' */
-    private static final double DEAD_PCT_CRIT = 30.0;
-    /**
-     * Umbral absoluto de dead tuples para estado 'warning' (dead &gt; 10 AND bloat
-     * &gt; 20%)
-     */
-    private static final int DEAD_WARN_ABSOLUTE = 10;
-    /** Porcentaje de bloat para estado 'warning' */
-    private static final double DEAD_PCT_WARN = 20.0;
-    private static final double IDX_EFF_WARN = 80.0; // por debajo → low-efficiency
-    private static final double CONN_WARN_PCT = 70.0;
-    private static final double CONN_CRIT_PCT = 90.0;
-
-    /** Mínimo de seq_scans para considerar eficiencia baja como alerta real */
-    private static final long IDX_MIN_SEQ_SCANS = 100;
-    /** Eficiencia mínima para disparar alerta en tablas con datos reales */
-    private static final double IDX_ALERT_EFF_THRESHOLD = 50.0;
-    /** Mínimo de registros vivos para que apliquen alertas de índices */
-    private static final long IDX_MIN_LIVE_ROWS = 50;
-    /** Mínimo de registros para recomendar REINDEX */
     private static final long IDX_REINDEX_MIN_ROWS = 100;
 
     // ── Variables para cálculo de TPS real (delta entre llamadas) ────────────
@@ -196,7 +176,7 @@ public class DatabaseMonitoringService {
             "  AND state = 'active' " +
             "  AND query NOT ILIKE '%pg_stat_activity%'";
 
-    private static final String SQL_TOP_TABLES = "SELECT relname, " +
+    private static final String SQL_TOP_TABLES = "SELECT schemaname || '.' || relname, " +
             "       pg_total_relation_size(relid), " +
             "       pg_indexes_size(relid), " +
             "       n_live_tup " +
@@ -218,7 +198,7 @@ public class DatabaseMonitoringService {
      * <li><b>ok</b>: el resto</li>
      * </ul>
      */
-    private static final String SQL_TABLE_HEALTH = "SELECT relname, " +
+    private static final String SQL_TABLE_HEALTH = "SELECT schemaname || '.' || relname, " +
             "       n_live_tup, " +
             "       n_dead_tup, " +
             "       pg_size_pretty(pg_total_relation_size(relid)) AS total_size, " +
@@ -229,12 +209,48 @@ public class DatabaseMonitoringService {
 
     /** Uso de índices: scans por índice vs. escaneos secuenciales de la tabla */
     private static final String SQL_INDEX_USAGE = "SELECT i.indexrelname, " +
-            "       i.relname, " +
+            "       i.schemaname || '.' || i.relname, " +
             "       i.idx_scan, " +
             "       t.seq_scan " +
             "FROM pg_stat_user_indexes i " +
             "JOIN pg_stat_user_tables  t ON i.relid = t.relid " +
             "ORDER BY i.idx_scan DESC";
+
+    /**
+     * Nombres de índices que respaldan una PK o constraint UNIQUE en el esquema
+     * público. Estos índices NUNCA deben reportarse como "unused" porque
+     * PostgreSQL los usa internamente para garantizar integridad referencial,
+     * aunque {@code idx_scan} sea 0.
+     *
+     * <p>
+     * Tipos de constraint incluidos:
+     * </p>
+     * <ul>
+     * <li>{@code 'p'} — PRIMARY KEY</li>
+     * <li>{@code 'u'} — UNIQUE</li>
+     * </ul>
+     */
+    private static final String SQL_CONSTRAINT_INDEX_NAMES = "SELECT i.indexname " +
+            "FROM pg_indexes i " +
+            "JOIN pg_constraint c " +
+            "  ON c.conname = i.indexname " +
+            " AND c.contype IN ('p', 'u') " +
+            "WHERE i.schemaname IN ('auth','security','catalog','sales','customer','ops','public')";
+
+    /**
+     * Nombres de tablas que tuvieron un REINDEX exitoso en las últimas 24 h
+     * según el historial propio de la aplicación ({@code maintenance_logs}).
+     * Los contadores de índices de estas tablas acaban de resetearse y no
+     * son representativos del uso real.
+     */
+    private static final String SQL_RECENTLY_REBUILT_TABLES = "SELECT target_name " +
+            "FROM ops.maintenance_logs " +
+            "WHERE operation = 'REINDEX' " +
+            "  AND status    = 'SUCCESS' " +
+            "  AND executed_at > NOW() - INTERVAL '24 hours'";
+
+    /** Última fecha de vacuum (manual o autovacuum) entre todas las tablas */
+    private static final String SQL_LAST_VACUUM_ANY = "SELECT GREATEST(MAX(last_vacuum), MAX(last_autovacuum)) FROM pg_stat_user_tables";
 
     // ── Dependencias ──────────────────────────────────────────────────────────
 
@@ -249,9 +265,16 @@ public class DatabaseMonitoringService {
     /**
      * Recopila todas las métricas de salud de la base de datos en una sola llamada.
      *
+     * <p>
+     * Resultado cacheado durante 15 segundos (ver
+     * {@link com.security.config.CacheConfig})
+     * para proteger PostgreSQL del polling frecuente del dashboard.
+     * </p>
+     *
      * @return {@link DatabaseMetricsDto} con todos los datos actuales de
      *         PostgreSQL.
      */
+    @Cacheable("dbMetrics")
     public DatabaseMetricsDto getMetrics() {
         log.debug("[Monitoring] Consultando métricas completas de la base de datos...");
 
@@ -297,22 +320,37 @@ public class DatabaseMonitoringService {
         List<TableHealthDto> tableHealth = queryTableHealth();
         List<IndexUsageDto> indexUsage = queryIndexUsage();
 
-        // Alertas automáticas
-        List<DbAlertDto> alerts = generateAlerts(tableHealth, indexUsage, connections, performance);
+        // Fuentes adicionales para evaluación de índices sin falsos positivos
+        Set<String> constraintIndexNames = queryConstraintIndexNames();
+        Set<String> recentlyRebuiltTables = queryRecentlyRebuiltTables();
+        LocalDateTime lastVacuumAny = queryLastVacuumAny();
+
+        // Contar índices sin datos suficientes (para el banner informativo del
+        // frontend)
+        int insufficientDataIndexCount = countInsufficientDataIndexes(
+                tableHealth, indexUsage, constraintIndexNames, recentlyRebuiltTables);
+
+        // Alertas automáticas — usa IndexEvaluator para evitar falsos positivos
+        List<DbAlertDto> alerts = generateAlerts(
+                tableHealth, indexUsage, connections, performance,
+                constraintIndexNames, recentlyRebuiltTables);
 
         // Score global (0-100)
         int healthScore = computeHealthScore(cacheHitRatio, connUsagePct, tableHealth, indexUsage, alerts);
 
         log.debug(
-                "[Monitoring] score={}, size={}B, conns={}/{}, pool={}, pgInternal={}, adminTools={}, users={}, cache={}%, tps={}, avgQ={}ms",
+                "[Monitoring] score={}, size={}B, conns={}/{}, pool={}, pgInternal={}, adminTools={}, users={}, cache={}%, tps={}, avgQ={}ms, insufficientIdx={}",
                 healthScore, dbSizeBytes, totalConns, maxConnections,
-                poolConns, pgInternalConns, adminToolConns, userSessions, cacheHitRatio, tps, avgQueryMs);
+                poolConns, pgInternalConns, adminToolConns, userSessions, cacheHitRatio, tps, avgQueryMs,
+                insufficientDataIndexCount);
 
         return new DatabaseMetricsDto(
                 healthScore, dbSizeBytes, uptimeDays, pgVersion,
                 totalConns, cacheHitRatio, topTables,
                 performance, connections,
-                tableHealth, indexUsage, alerts);
+                tableHealth, indexUsage, alerts,
+                insufficientDataIndexCount,
+                lastVacuumAny);
     }
 
     /**
@@ -399,14 +437,14 @@ public class DatabaseMonitoringService {
                 "       latest.user_agent, " +
                 "       latest.session_count, " +
                 "       EXTRACT(EPOCH FROM (NOW() - latest.last_activity))::bigint AS seconds_inactive " +
-                "FROM users u " +
+                "FROM auth.users u " +
                 "JOIN ( " +
                 "  SELECT a.user_id, " +
                 "         MAX(a.last_activity)  AS last_activity, " +
                 "         COUNT(a.id)           AS session_count, " +
                 "         MAX(a.ip_address)     AS ip_address, " +
                 "         MAX(a.user_agent)     AS user_agent " +
-                "  FROM active_sessions a " +
+                "  FROM auth.active_sessions a " +
                 "  WHERE a.revoked = false " +
                 "    AND a.expires_at > NOW() " +
                 "    AND a.last_activity > NOW() - INTERVAL '30 minutes' " +
@@ -436,7 +474,7 @@ public class DatabaseMonitoringService {
     private int querySessionsLastHour() {
         Integer r = jdbc.queryForObject(
                 "SELECT COUNT(DISTINCT user_id)::int " +
-                        "FROM active_sessions " +
+                        "FROM auth.active_sessions " +
                         "WHERE revoked = false " +
                         "  AND expires_at > NOW() " +
                         "  AND last_activity > NOW() - INTERVAL '1 hour'",
@@ -448,7 +486,7 @@ public class DatabaseMonitoringService {
     private int querySessionsToday() {
         Integer r = jdbc.queryForObject(
                 "SELECT COUNT(DISTINCT user_id)::int " +
-                        "FROM active_sessions " +
+                        "FROM auth.active_sessions " +
                         "WHERE revoked = false " +
                         "  AND expires_at > NOW() " +
                         "  AND last_activity >= CURRENT_DATE",
@@ -593,9 +631,11 @@ public class DatabaseMonitoringService {
         if (liveTuples + deadTuples == 0)
             return "ok";
         double bloatPct = (double) deadTuples / (liveTuples + deadTuples) * 100.0;
-        if (deadTuples > DEAD_CRIT_ABSOLUTE && bloatPct > DEAD_PCT_CRIT)
+        if (deadTuples > DatabaseThresholds.TABLE_DEAD_TUPLES_CRITICAL
+                && bloatPct > DatabaseThresholds.TABLE_BLOAT_PCT_CRITICAL)
             return "critical";
-        if (deadTuples > DEAD_WARN_ABSOLUTE && bloatPct > DEAD_PCT_WARN)
+        if (deadTuples > DatabaseThresholds.TABLE_DEAD_TUPLES_WARNING
+                && bloatPct > DatabaseThresholds.TABLE_BLOAT_PCT_WARNING)
             return "warning";
         return "ok";
     }
@@ -616,7 +656,7 @@ public class DatabaseMonitoringService {
             String status;
             if (idxScans == 0 && seqScans == 0) {
                 status = "unused";
-            } else if (effPct < IDX_EFF_WARN) {
+            } else if (effPct < DatabaseThresholds.INDEX_EFFICIENCY_WARNING) {
                 status = "low-efficiency";
             } else {
                 status = "active";
@@ -626,13 +666,56 @@ public class DatabaseMonitoringService {
         });
     }
 
+    // ── Helper: fuentes adicionales para la evaluación de índices ───────────
+    private Set<String> queryConstraintIndexNames() {
+        List<String> rows = jdbc.queryForList(SQL_CONSTRAINT_INDEX_NAMES, String.class);
+        return new HashSet<>(rows != null ? rows : List.of());
+    }
+
+    private Set<String> queryRecentlyRebuiltTables() {
+        List<String> rows = jdbc.queryForList(SQL_RECENTLY_REBUILT_TABLES, String.class);
+        return new HashSet<>(rows != null ? rows : List.of());
+    }
+
+    private LocalDateTime queryLastVacuumAny() {
+        Timestamp t = jdbc.queryForObject(SQL_LAST_VACUUM_ANY, Timestamp.class);
+        return t != null ? t.toLocalDateTime() : null;
+    }
+
+    private int countInsufficientDataIndexes(
+            List<TableHealthDto> tableHealth,
+            List<IndexUsageDto> indexUsage,
+            Set<String> constraintIndexNames,
+            Set<String> recentlyRebuiltTables) {
+        Map<String, Long> tableLiveMap = tableHealth.stream()
+                .collect(java.util.stream.Collectors.toMap(TableHealthDto::tableName, TableHealthDto::estimatedRows));
+
+        int cnt = 0;
+        for (IndexUsageDto idx : indexUsage) {
+            long liveRows = tableLiveMap.getOrDefault(idx.tableName(), 0L);
+            boolean isConstraint = constraintIndexNames.contains(idx.indexName());
+            boolean wasRebuilt = recentlyRebuiltTables.contains(idx.tableName());
+
+            IndexEvaluator.EvaluationContext ctx = new IndexEvaluator.EvaluationContext(
+                    idx.indexScans(), idx.seqScans(), liveRows, isConstraint, wasRebuilt);
+
+            IndexEvaluator.IndexVerdict v = IndexEvaluator.evaluate(ctx);
+            if (v == IndexEvaluator.IndexVerdict.INSUFFICIENT_DATA) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
     // ── Generador de alertas ─────────────────────────────────────────────────
 
     private List<DbAlertDto> generateAlerts(
             List<TableHealthDto> tableHealth,
             List<IndexUsageDto> indexUsage,
             ConnectionInfoDto connections,
-            PerformanceMetricsDto performance) {
+            PerformanceMetricsDto performance,
+            Set<String> constraintIndexNames,
+            Set<String> recentlyRebuiltTables) {
 
         List<DbAlertDto> alerts = new ArrayList<>();
         AtomicInteger seq = new AtomicInteger(1);
@@ -654,52 +737,49 @@ public class DatabaseMonitoringService {
             }
         }
 
-        // — Alertas de índices —
-        for (IndexUsageDto idx : indexUsage) {
-            // Obtener registros vivos de la tabla correspondiente
-            long liveRows = tableHealth.stream()
-                    .filter(t -> t.tableName().equals(idx.tableName()))
-                    .mapToLong(TableHealthDto::estimatedRows)
-                    .findFirst()
-                    .orElse(0L);
+        // — Alertas de índices — (usar IndexEvaluator para evitar falsos positivos)
+        Map<String, Long> tableLiveMap = tableHealth.stream()
+                .collect(java.util.stream.Collectors.toMap(TableHealthDto::tableName, TableHealthDto::estimatedRows));
 
-            if ("unused".equals(idx.status())) {
+        for (IndexUsageDto idx : indexUsage) {
+            long liveRows = tableLiveMap.getOrDefault(idx.tableName(), 0L);
+            boolean isConstraint = constraintIndexNames.contains(idx.indexName());
+            boolean wasRebuilt = recentlyRebuiltTables.contains(idx.tableName());
+
+            IndexEvaluator.EvaluationContext ctx = new IndexEvaluator.EvaluationContext(
+                    idx.indexScans(), idx.seqScans(), liveRows, isConstraint, wasRebuilt);
+
+            IndexEvaluator.IndexVerdict verdict = IndexEvaluator.evaluate(ctx);
+
+            if (verdict == IndexEvaluator.IndexVerdict.UNUSED_CONFIRMED) {
                 alerts.add(new DbAlertDto(
                         "idx-unused-" + seq.getAndIncrement(), "critical", "Índices",
                         "El índice \"" + idx.indexName() + "\" no se ha utilizado nunca",
                         "0 búsquedas",
                         "Considera eliminar este índice para liberar espacio y mejorar el rendimiento de escritura."));
-            } else if ("low-efficiency".equals(idx.status())) {
-                // Solo generar alerta si hay suficientes datos y uso real
-                boolean hasRealData = liveRows >= IDX_MIN_LIVE_ROWS;
-                boolean hasRealUsage = idx.seqScans() >= IDX_MIN_SEQ_SCANS;
-                boolean lowEfficiency = idx.efficiencyPct() < IDX_ALERT_EFF_THRESHOLD;
-
-                if (hasRealData && hasRealUsage && lowEfficiency) {
-                    // Tabla con datos reales: sugerir REINDEX solo si tiene >100 registros
-                    String hint = liveRows >= IDX_REINDEX_MIN_ROWS
-                            ? "Ejecuta REINDEX TABLE " + idx.tableName() + " para reconstruir los índices."
-                            : "La eficiencia baja es normal mientras la tabla tiene pocos registros. "
-                                    + "Se optimizará automáticamente cuando crezca el volumen de datos.";
-                    alerts.add(new DbAlertDto(
-                            "idx-low-" + seq.getAndIncrement(), "warning", "Índices",
-                            "El índice \"" + idx.indexName() + "\" tiene eficiencia baja (" + idx.efficiencyPct()
-                                    + "%)",
-                            idx.efficiencyPct() + "% — " + idx.seqScans() + " escaneos secuenciales",
-                            hint));
-                }
-                // Si la tabla tiene < 50 registros: no generar alerta (normal en desarrollo)
+            } else if (verdict == IndexEvaluator.IndexVerdict.LOW_EFFICIENCY) {
+                String hint = liveRows >= DatabaseThresholds.INDEX_MIN_LIVE_ROWS
+                        ? "Ejecuta REINDEX TABLE " + idx.tableName() + " para reconstruir los índices."
+                        : "La eficiencia baja es normal mientras la tabla tiene pocos registros. "
+                                + "Se optimizará automáticamente cuando crezca el volumen de datos.";
+                alerts.add(new DbAlertDto(
+                        "idx-low-" + seq.getAndIncrement(), "warning", "Índices",
+                        "El índice \"" + idx.indexName() + "\" tiene eficiencia baja (" + idx.efficiencyPct()
+                                + "%)",
+                        idx.efficiencyPct() + "% — " + idx.seqScans() + " escaneos secuenciales",
+                        hint));
             }
+            // INSUFFICIENT_DATA → no generar alerta, solo contar para el banner
         }
 
         // — Alertas de conexiones —
-        if (connections.usagePct() >= CONN_CRIT_PCT) {
+        if (connections.usagePct() >= DatabaseThresholds.CONN_USAGE_CRITICAL) {
             alerts.add(new DbAlertDto(
                     "conn-crit-" + seq.getAndIncrement(), "critical", "Conexiones",
                     "El uso de conexiones supera el 90% del límite",
                     connections.total() + " / " + connections.maxLimit(),
                     "Revisa si hay conexiones ociosas y considera aumentar max_connections."));
-        } else if (connections.usagePct() >= CONN_WARN_PCT) {
+        } else if (connections.usagePct() >= DatabaseThresholds.CONN_USAGE_WARNING) {
             alerts.add(new DbAlertDto(
                     "conn-warn-" + seq.getAndIncrement(), "warning", "Conexiones",
                     "El uso de conexiones supera el 70% del límite",
@@ -708,13 +788,13 @@ public class DatabaseMonitoringService {
         }
 
         // — Alertas de rendimiento —
-        if (performance.cacheHitRatio() < CACHE_HIT_CRIT) {
+        if (performance.cacheHitRatio() < DatabaseThresholds.CACHE_HIT_CRITICAL) {
             alerts.add(new DbAlertDto(
                     "perf-cache-" + seq.getAndIncrement(), "critical", "Rendimiento",
                     "El cache hit ratio es críticamente bajo (" + performance.cacheHitRatio() + "%)",
                     performance.cacheHitRatio() + "%",
                     "Revisa las consultas más frecuentes y considera aumentar shared_buffers."));
-        } else if (performance.cacheHitRatio() < CACHE_HIT_WARN) {
+        } else if (performance.cacheHitRatio() < DatabaseThresholds.CACHE_HIT_WARNING) {
             alerts.add(new DbAlertDto(
                     "perf-cache-" + seq.getAndIncrement(), "warning", "Rendimiento",
                     "El cache hit ratio está por debajo del 95% recomendado (" + performance.cacheHitRatio() + "%)",

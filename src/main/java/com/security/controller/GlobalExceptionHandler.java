@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Manejador global de excepciones para toda la aplicación
@@ -244,6 +245,27 @@ public class GlobalExceptionHandler {
         }
 
         /**
+         * Maneja excepciones de estado ilegal
+         * HTTP 400 - BAD REQUEST
+         */
+        @ExceptionHandler(IllegalStateException.class)
+        public ResponseEntity<ErrorResponse> handleIllegalStateException(
+                        IllegalStateException ex, WebRequest request) {
+
+                log.error("Estado ilegal: {}", ex.getMessage());
+
+                ErrorResponse error = ErrorResponse.builder()
+                                .timestamp(LocalDateTime.now())
+                                .status(HttpStatus.BAD_REQUEST.value())
+                                .error("Bad Request")
+                                .message(ex.getMessage())
+                                .path(request.getDescription(false).replace("uri=", ""))
+                                .build();
+
+                return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        }
+
+        /**
          * Maneja excepciones de autenticación (credenciales incorrectas)
          * HTTP 401 - UNAUTHORIZED
          */
@@ -267,12 +289,15 @@ public class GlobalExceptionHandler {
         /**
          * Maneja excepciones de acceso denegado (sin permisos)
          * HTTP 403 - FORBIDDEN
+         * Hermético: no expone la razón exacta de la denegación
          */
         @ExceptionHandler(AccessDeniedException.class)
         public ResponseEntity<ErrorResponse> handleAccessDeniedException(
                         AccessDeniedException ex, WebRequest request) {
 
-                log.error("Acceso denegado: {}", ex.getMessage());
+                String errorId = UUID.randomUUID().toString();
+                log.error("[errorId={}] Acceso denegado: {} | path: {}", errorId, ex.getMessage(),
+                                request.getDescription(false));
 
                 ErrorResponse error = ErrorResponse.builder()
                                 .timestamp(LocalDateTime.now())
@@ -280,6 +305,7 @@ public class GlobalExceptionHandler {
                                 .error("Forbidden")
                                 .message("No tienes permisos para acceder a este recurso")
                                 .path(request.getDescription(false).replace("uri=", ""))
+                                .errorId(errorId)
                                 .build();
 
                 return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
@@ -329,24 +355,21 @@ public class GlobalExceptionHandler {
 
         /**
          * Maneja violaciones de restricciones de BD (campos únicos, NOT NULL, etc.)
-         * HTTP 409 - CONFLICT (en vez de 500)
+         * HTTP 409 - CONFLICT
+         * Hermético: NO expone detalles de la causa de BD; se loguea server-side con
+         * errorId
          */
         @ExceptionHandler(DataIntegrityViolationException.class)
         public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
                         DataIntegrityViolationException ex, WebRequest request) {
 
+                String errorId = UUID.randomUUID().toString();
                 String cause = ex.getMostSpecificCause().getMessage();
-                log.error("Violación de integridad de datos: {}", cause);
+                log.error("[errorId={}] Violación de integridad de datos: {}", errorId, cause);
 
-                String userMessage = "Conflicto de datos en la base de datos.";
-                if (cause != null) {
-                        if (cause.contains("username"))
-                                userMessage = "Ya existe un usuario con ese nombre de usuario.";
-                        else if (cause.contains("email"))
-                                userMessage = "Ya existe un usuario con ese correo electrónico.";
-                        else if (cause.contains("cannot be null"))
-                                userMessage = "Hay un campo obligatorio sin valor: " + cause;
-                }
+                // Mensaje genérico — no filtramos por contenido para evitar fugas
+                String userMessage = "Conflicto de datos. Si el problema persiste, contacta al soporte con el código: "
+                                + errorId;
 
                 ErrorResponse error = ErrorResponse.builder()
                                 .timestamp(LocalDateTime.now())
@@ -354,6 +377,7 @@ public class GlobalExceptionHandler {
                                 .error("Conflict")
                                 .message(userMessage)
                                 .path(request.getDescription(false).replace("uri=", ""))
+                                .errorId(errorId)
                                 .build();
 
                 return new ResponseEntity<>(error, HttpStatus.CONFLICT);
@@ -362,19 +386,24 @@ public class GlobalExceptionHandler {
         /**
          * Maneja todas las excepciones no específicas
          * HTTP 500 - INTERNAL SERVER ERROR
+         * Hermético: loguea stack trace completo server-side con errorId, devuelve
+         * solo mensaje genérico + errorId al cliente.
          */
         @ExceptionHandler(Exception.class)
         public ResponseEntity<ErrorResponse> handleGlobalException(
                         Exception ex, WebRequest request) {
 
-                log.error("Error interno del servidor", ex);
+                String errorId = UUID.randomUUID().toString();
+                log.error("[errorId={}] Error interno del servidor en path={}: {}",
+                                errorId, request.getDescription(false), ex.getMessage(), ex);
 
                 ErrorResponse error = ErrorResponse.builder()
                                 .timestamp(LocalDateTime.now())
                                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                                 .error("Internal Server Error")
-                                .message("Ha ocurrido un error inesperado. Por favor, contacta al soporte.")
+                                .message("Ha ocurrido un error inesperado. Código de referencia: " + errorId)
                                 .path(request.getDescription(false).replace("uri=", ""))
+                                .errorId(errorId)
                                 .build();
 
                 return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -393,6 +422,7 @@ public class GlobalExceptionHandler {
                 private String error;
                 private String message;
                 private String path;
+                private String errorId;
                 private Map<String, Object> details;
         }
 }

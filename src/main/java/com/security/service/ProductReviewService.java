@@ -356,7 +356,8 @@ public class ProductReviewService {
         log.info("Recalculando rating del producto {}", productId);
 
         try {
-            StoredProcedureQuery query = entityManager.createStoredProcedureQuery("sp_recalculate_product_rating");
+            StoredProcedureQuery query = entityManager
+                    .createStoredProcedureQuery("catalog.sp_recalculate_product_rating");
             query.registerStoredProcedureParameter("p_product_id", Long.class, ParameterMode.IN);
             query.setParameter("p_product_id", productId);
 

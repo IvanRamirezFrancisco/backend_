@@ -152,11 +152,22 @@ public class AuthService {
         userResponse.setCreatedAt(user.getCreatedAt());
         userResponse.setUpdatedAt(user.getUpdatedAt());
 
-        // Obtener nombres de roles (String directamente)
+        // Nombres de roles (ej. ["ROLE_VR_DASHBOARD", "ROLE_ADMIN"])
         Set<String> roleNames = user.getRoles().stream()
                 .map(role -> role.getName())
                 .collect(Collectors.toSet());
         userResponse.setRoles(roleNames);
+
+        // Permisos granulares expandidos de TODOS los roles (ej. ["DASHBOARD_VIEW",
+        // "PRODUCT_READ"])
+        Set<String> permissionNames = user.getRoles().stream()
+                .flatMap(role -> role.getPermissions().stream())
+                .map(permission -> permission.getName())
+                .collect(Collectors.toSet());
+        userResponse.setPermissions(permissionNames);
+
+        // Flag de tipo de usuario: true = cliente, false = empleado/staff
+        userResponse.setIsCustomer(user.getIsCustomer());
 
         userResponse.setGoogleAuthEnabled(user.getGoogleAuthEnabled());
         userResponse.setEmailEnabled(user.getEmailEnabled());

@@ -9,9 +9,9 @@ spring:
 
   # Configuración de base de datos PostgreSQL (Railway / variables de entorno)
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:security_db}}
-    username: ${PGUSER:${SPRING_DATASOURCE_USERNAME:postgres}}
-    password: ${PGPASSWORD:${SPRING_DATASOURCE_PASSWORD:}}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:security_db}}
+    username: ${SPRING_DATASOURCE_USERNAME:${PGUSER:postgres}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PGPASSWORD:}}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -19,6 +19,7 @@ spring:
       connection-timeout: 20000
       idle-timeout: 300000
       max-lifetime: 1200000
+      connection-init-sql: SET search_path TO public,auth,security,catalog,sales,customer,ops
 
   jpa:
     hibernate:
@@ -28,10 +29,13 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
+        default_schema: public
 
   flyway:
     enabled: true
     baseline-on-migrate: true
+    default-schema: public
+    schemas: public,auth,security,catalog,sales,customer,ops
 
   # Límite de subida de archivos (CSV import — máximo lógico 5 MB en CsvController)
   servlet:
@@ -135,7 +139,7 @@ management:
     web:
       exposure:
         include: health,info
-      base-path: /api/actuator
+      base-path: /actuator
   endpoint:
     health:
       show-details: when-authorized
@@ -152,3 +156,37 @@ logging:
     org.hibernate: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# ============================================================
+# CLOUDINARY - PRODUCCIÓN
+# ============================================================
+storage:
+  provider: CLOUDINARY
+CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:}
+CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:}
+CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:}
+
+# ============================================================
+# MERCADO PAGO - CHECKOUT PRO / PRODUCCIÓN
+# ============================================================
+mercadopago:
+  enabled: ${MERCADO_PAGO_ENABLED:false}
+  environment: ${MERCADO_PAGO_ENVIRONMENT:production}
+  access-token: ${MERCADO_PAGO_ACCESS_TOKEN:}
+  public-key: ${MERCADO_PAGO_PUBLIC_KEY:}
+  frontend-base-url: ${FRONTEND_PUBLIC_BASE_URL}
+  backend-base-url: ${BACKEND_PUBLIC_BASE_URL}
+  webhook-secret: ${MERCADO_PAGO_WEBHOOK_SECRET:}
+
+# ============================================================
+# CONFIGURACION DE LA TIENDA (API Alexa y Públicos)
+# ============================================================
+store:
+  name: ${STORE_NAME:Casa de Música Castillo}
+  address: ${STORE_ADDRESS:C. Morelos 18, Centro, 43000 Huejutla de Reyes, Hgo.}
+  phone: ${STORE_PHONE:771 125 8792}
+  whatsapp: ${STORE_WHATSAPP:+527711258792}
+  facebook: ${STORE_FACEBOOK:https://www.facebook.com/100094724658538}
+  hours: ${STORE_HOURS:Lunes a sábado de 9:00 a.m. a 7:00 p.m.; domingo de 10:00 a.m. a 3:00 p.m.}
+  paymentMethods: ${STORE_PAYMENT_METHODS:Efectivo, tarjeta, transferencia y Mercado Pago}
+  warrantyInfo: ${STORE_WARRANTY_INFO:La garantía depende del producto, marca y condiciones del proveedor.}

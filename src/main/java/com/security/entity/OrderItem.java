@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  * Entidad para items de una orden
  */
 @Entity
-@Table(name = "order_items")
+@Table(name = "order_items", schema = "sales")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

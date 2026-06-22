@@ -16,8 +16,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import com.security.security.UserPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import com.security.dto.request.RejectPaymentProofRequest;
+import org.springframework.core.io.Resource;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -47,7 +51,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/orders")
-@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+@PreAuthorize("hasAuthority('ORDER_READ')")
 @Slf4j
 public class AdminOrderController {
 
@@ -60,6 +64,9 @@ public class AdminOrderController {
 
     @Autowired
     private OrderService orderService;
+    
+    @Autowired
+    private com.security.service.PaymentProofService paymentProofService;
 
     // ==================== LISTAR Y BUSCAR ====================
 
@@ -191,13 +198,16 @@ public class AdminOrderController {
 
     // ==================== ACTUALIZAR ESTADOS ====================
 
+    // FASE 0 - Seguridad - 2026-05-15
     /**
      * PATCH /api/admin/orders/{id}/status
      *
      * Cambiar el estado de la orden.
      * Body: { "status": "CONFIRMED" }
+     * Requiere ORDER_UPDATE (no hereda ORDER_READ de clase).
      */
     @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public ResponseEntity<?> updateOrderStatus(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
@@ -236,13 +246,16 @@ public class AdminOrderController {
         }
     }
 
+    // FASE 0 - Seguridad - 2026-05-15
     /**
      * PATCH /api/admin/orders/{id}/payment-status
      *
      * Cambiar el estado de pago de la orden.
      * Body: { "paymentStatus": "PAID" }
+     * Requiere ORDER_UPDATE (no hereda ORDER_READ de clase).
      */
     @PatchMapping("/{id}/payment-status")
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public ResponseEntity<?> updatePaymentStatus(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
@@ -281,13 +294,16 @@ public class AdminOrderController {
         }
     }
 
+    // FASE 0 - Seguridad - 2026-05-15
     /**
      * PATCH /api/admin/orders/{id}/shipping-status
      *
      * Cambiar el estado de envío de la orden.
      * Body: { "shippingStatus": "SHIPPED", "trackingNumber": "TRK123456" }
+     * Requiere ORDER_UPDATE (no hereda ORDER_READ de clase).
      */
     @PatchMapping("/{id}/shipping-status")
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public ResponseEntity<?> updateShippingStatus(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
@@ -328,16 +344,20 @@ public class AdminOrderController {
         }
     }
 
+    // FASE 0 - Seguridad - 2026-05-15
     /**
      * PATCH /api/admin/orders/{id}/cancel
      *
      * Cancelar una orden con un motivo obligatorio.
      * Body: { "reason": "Solicitud del cliente" }
+     * Requiere ORDER_UPDATE (no hereda ORDER_READ de clase).
      */
     @PatchMapping("/{id}/cancel")
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public ResponseEntity<?> cancelOrder(
             @PathVariable Long id,
-            @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, String> body,
+            Authentication authentication) {
 
         try {
             String reason = body.get("reason");
@@ -351,10 +371,15 @@ public class AdminOrderController {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "El motivo no puede exceder 500 caracteres"));
             }
+            
+            Long adminId = null;
+            if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal) {
+                adminId = principal.getId();
+            }
 
-            log.info("PATCH /api/admin/orders/{}/cancel — motivo proporcionado", id);
+            log.info("PATCH /api/admin/orders/{}/cancel — motivo proporcionado, adminId={}", id, adminId);
 
-            OrderDTO updatedOrder = orderService.updateOrderStatus(id, OrderStatus.CANCELLED);
+            OrderDTO updatedOrder = orderService.cancelOrder(id, reason, "ADMIN", adminId);
 
             log.info("PATCH /api/admin/orders/{}/cancel — orden cancelada correctamente", id);
 
@@ -428,5 +453,87 @@ public class AdminOrderController {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
+    }
+
+    // ==================== COMPROBANTES DE PAGO ====================
+
+    @GetMapping("/{id}/payment-proof")
+    public ResponseEntity<?> getPaymentProof(@PathVariable Long id) {
+        try {
+            com.security.dto.response.PaymentProofResponse response = paymentProofService.getAdminPaymentProof(id);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.warn("Comprobante no encontrado para orden {}: {}", id, e.getMessage());
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/{id}/payment-proof/file")
+    public ResponseEntity<Resource> getPaymentProofFile(@PathVariable Long id) {
+        try {
+            com.security.dto.response.PaymentProofFileResponse response = paymentProofService.getAdminPaymentProofFile(id);
+
+            String contentType = response.contentType();
+            String ext = ".pdf";
+            if (contentType != null) {
+                if (contentType.contains("jpeg") || contentType.contains("jpg")) ext = ".jpg";
+                else if (contentType.contains("png")) ext = ".png";
+                else if (contentType.contains("webp")) ext = ".webp";
+            }
+            
+            String orderNum = response.orderNumber() != null ? response.orderNumber() : "UNKNOWN";
+            if (orderNum.startsWith("ORD-")) {
+                orderNum = orderNum.substring(4);
+            }
+            String filename = "comprobante-ORD-" + orderNum + ext;
+            org.springframework.http.ContentDisposition contentDisposition = org.springframework.http.ContentDisposition.builder("inline")
+                    .filename(filename)
+                    .build();
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(response.contentType()))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .header(HttpHeaders.PRAGMA, "no-cache")
+                    .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Content-Type")
+                    .body(response.resource());
+        } catch (RuntimeException e) {
+            log.warn("No se pudo descargar comprobante de orden {}: {}", id, e.getMessage());
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PatchMapping("/{id}/payment-proof/approve")
+    @PreAuthorize("hasAuthority('ORDER_UPDATE') or hasAuthority('ORDER_MANAGE') or hasAuthority('PAYMENT_MANAGE') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<?> approvePaymentProof(
+            @PathVariable Long id,
+            Authentication authentication) {
+        try {
+            Long adminId = ((UserPrincipal) authentication.getPrincipal()).getId();
+            log.info("Aprobando comprobante para orden {} por admin {}", id, adminId);
+            com.security.dto.response.PaymentProofResponse response = paymentProofService.approvePaymentProof(adminId, id);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.warn("Error aprobando comprobante orden {}: {}", id, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PatchMapping("/{id}/payment-proof/reject")
+    @PreAuthorize("hasAuthority('ORDER_UPDATE') or hasAuthority('ORDER_MANAGE') or hasAuthority('PAYMENT_MANAGE') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<?> rejectPaymentProof(
+            @PathVariable Long id,
+            @RequestBody RejectPaymentProofRequest request,
+            Authentication authentication) {
+        try {
+            Long adminId = ((UserPrincipal) authentication.getPrincipal()).getId();
+            log.info("Rechazando comprobante para orden {} por admin {}", id, adminId);
+            com.security.dto.response.PaymentProofResponse response = paymentProofService.rejectPaymentProof(adminId, id, request.getReason());
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.warn("Error rechazando comprobante orden {}: {}", id, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }

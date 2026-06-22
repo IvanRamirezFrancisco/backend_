@@ -17,7 +17,7 @@ import java.util.Set;
  * Entidad para productos musicales
  */
 @Entity
-@Table(name = "products")
+@Table(name = "products", schema = "catalog")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -193,4 +193,21 @@ public class Product {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // ============ MÉTODOS HELPER (BIDIRECCIONAL) ============
+
+    public void addImage(ProductImage image) {
+        if (this.images == null) {
+            this.images = new LinkedHashSet<>();
+        }
+        this.images.add(image);
+        image.setProduct(this);
+    }
+
+    public void removeImage(ProductImage image) {
+        if (this.images != null) {
+            this.images.remove(image);
+        }
+        image.setProduct(null);
+    }
 }

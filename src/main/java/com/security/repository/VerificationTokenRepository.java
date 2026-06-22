@@ -55,4 +55,9 @@ public interface VerificationTokenRepository extends JpaRepository<VerificationT
     // Contar tokens activos
     @Query("SELECT COUNT(vt) FROM VerificationToken vt WHERE vt.user.id = :userId AND vt.expiryDate > :currentTime AND vt.used = false")
     long countActiveTokensByUserId(@Param("userId") Long userId, @Param("currentTime") LocalDateTime currentTime);
+
+    // Eliminar tokens de verificación por lista de IDs de usuario (cleanup job)
+    @Modifying
+    @Query("DELETE FROM VerificationToken vt WHERE vt.user.id IN :userIds")
+    void deleteByUserIdIn(@Param("userIds") List<Long> userIds);
 }

@@ -13,6 +13,8 @@ public class UserResponse {
     private boolean enabled;
     private boolean twoFactorEnabled;
     private Set<String> roles;
+    private Set<String> permissions;
+    private Boolean isCustomer;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Boolean googleAuthEnabled;
@@ -127,5 +129,21 @@ public class UserResponse {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Set<String> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(Set<String> permissions) {
+        this.permissions = permissions;
+    }
+
+    public Boolean getIsCustomer() {
+        return isCustomer;
+    }
+
+    public void setIsCustomer(Boolean isCustomer) {
+        this.isCustomer = isCustomer;
     }
 }

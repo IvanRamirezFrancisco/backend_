@@ -10,6 +10,14 @@ import com.security.enums.PaymentStatus;
 import com.security.enums.ShippingStatus;
 import com.security.repository.OrderRepository;
 import com.security.service.AuditLogService;
+import com.security.dto.CheckoutRequest;
+import com.security.entity.CartItem;
+import com.security.entity.Product;
+import com.security.entity.ShoppingCart;
+import com.security.repository.ProductRepository;
+import com.security.repository.ShoppingCartRepository;
+import com.security.repository.UserRepository;
+import com.security.service.ShoppingCartService;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -26,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.UUID;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +59,25 @@ public class OrderService {
     private OrderRepository orderRepository;
 
     @Autowired
+    private com.security.repository.PaymentProofRepository paymentProofRepository;
+
+    @Autowired
+    private PaymentService paymentService;
+
+    @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private ShoppingCartService shoppingCartService;
+
+    @Autowired
+    private ShoppingCartRepository cartRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     // ==================== LISTAR Y BUSCAR ====================
 
@@ -197,6 +224,180 @@ public class OrderService {
         return convertToDTO(order);
     }
 
+    // ==================== CHECKOUT Y CANCELACIÓN ====================
+
+    /**
+     * FASE 4: Convierte un carrito en una orden.
+     * Valida disponibilidad, resta stock, crea la orden y cierra el carrito.
+     */
+    public OrderDTO createOrderFromCart(Long userId, CheckoutRequest request) {
+        log.info("createOrderFromCart — userId={}", userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado con ID: " + userId));
+
+        ShoppingCart cart = shoppingCartService.getOrCreateCartForUser(userId);
+
+        var validation = shoppingCartService.validateCartForCheckout(cart.getId());
+        if (!validation.isValid()) {
+            log.warn("createOrderFromCart — checkout fallido por carrito inválido. Errores: {}", validation.getGlobalErrors());
+            throw new RuntimeException("El carrito no es válido para checkout. Revise la disponibilidad de los productos.");
+        }
+
+        // Crear la orden
+        Order order = new Order();
+        order.setOrderNumber("ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        order.setUser(user);
+        
+        // Datos de checkout
+        order.setShippingAddress(request.getShippingAddress());
+        order.setBillingAddress(request.getBillingAddress());
+        order.setPaymentMethod(request.getPaymentMethod());
+        order.setCustomerNotes(request.getNotes());
+        
+        // Totales del carrito (confiamos en el cálculo de backend)
+        order.setSubtotal(cart.getSubtotal());
+        order.setTax(cart.getTax());
+        order.setDiscount(cart.getDiscount() != null ? cart.getDiscount() : java.math.BigDecimal.ZERO);
+        
+        // Cálculo de envío
+        java.math.BigDecimal shipping = java.math.BigDecimal.ZERO;
+        if (cart.getSubtotal().compareTo(new java.math.BigDecimal("1000.00")) < 0) {
+            shipping = new java.math.BigDecimal("50.00");
+        }
+        order.setShipping(shipping);
+        
+        // Total final sumando envío
+        java.math.BigDecimal total = cart.getTotal().add(shipping);
+        order.setTotal(total);
+        
+        // No hay campo couponCode en Order actualmente
+        
+        // Estados iniciales
+        order.setStatus(OrderStatus.PENDING);
+        order.setPaymentStatus(PaymentStatus.PENDING);
+        order.setShippingStatus(ShippingStatus.PENDING);
+        
+        // Procesar items y restar stock
+        for (CartItem cartItem : cart.getItems()) {
+            Product product = cartItem.getProduct();
+            
+            // Restar stock
+            if (product.getStock() < cartItem.getQuantity()) {
+                throw new RuntimeException("Stock insuficiente para el producto: " + product.getName());
+            }
+            product.setStock(product.getStock() - cartItem.getQuantity());
+            productRepository.save(product);
+            
+            // Crear snapshot en OrderItem
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(order);
+            orderItem.setProduct(product);
+            orderItem.setProductName(product.getName());
+            orderItem.setProductSku(product.getSku());
+            orderItem.setQuantity(cartItem.getQuantity());
+            orderItem.setUnitPrice(cartItem.getUnitPrice());
+            orderItem.setSubtotal(cartItem.getSubtotal());
+            
+            order.getItems().add(orderItem);
+        }
+        
+        // Guardar orden
+        Order savedOrder = orderRepository.save(order);
+        
+        // Marcar carrito como convertido
+        cart.setStatus("CONVERTED");
+        cartRepository.save(cart);
+        
+        log.info("createOrderFromCart — Orden creada exitosamente: {} para usuario {}", savedOrder.getOrderNumber(), userId);
+        
+        return convertToDTO(savedOrder);
+    }
+
+    /**
+     * FASE 4: Cancelación centralizada y segura de una orden.
+     * Restaura el stock de los productos.
+     */
+    public OrderDTO cancelOrder(Long orderId, String reason, String source, Long actorId) {
+        log.info("cancelOrder — orderId={}, source={}, actorId={}", orderId, source, actorId);
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Orden no encontrada"));
+
+        // Prevenir doble cancelación
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            throw new RuntimeException("La orden ya se encuentra cancelada.");
+        }
+
+        // Reglas de cancelación según el origen
+        if ("CUSTOMER".equals(source)) {
+            if (order.getUser() == null || !order.getUser().getId().equals(actorId)) {
+                throw new RuntimeException("No tiene permiso para cancelar esta orden.");
+            }
+            if (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.CONFIRMED) {
+                throw new RuntimeException("Solo puede cancelar órdenes en estado PENDING o CONFIRMED.");
+            }
+        } else if ("ADMIN".equals(source)) {
+            if (order.getShippingStatus() == ShippingStatus.SHIPPED || order.getShippingStatus() == ShippingStatus.DELIVERED) {
+                throw new RuntimeException("El pedido ya fue enviado o entregado; inicie un flujo de devolución o incidencia en su lugar.");
+            }
+        } else {
+            throw new RuntimeException("Origen de cancelación desconocido.");
+        }
+
+        // Restaurar stock
+        for (OrderItem item : order.getItems()) {
+            Product product = item.getProduct();
+            if (product != null) {
+                product.setStock((product.getStock() != null ? product.getStock() : 0) + item.getQuantity());
+                productRepository.save(product);
+                log.info("cancelOrder — stock restaurado para producto {}: +{}", product.getId(), item.getQuantity());
+            }
+        }
+
+        // Actualizar estados
+        OrderStatus oldStatus = order.getStatus();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(LocalDateTime.now());
+        order.setCancellationReason(reason);
+        order.setCancelSource(source);
+        order.setCancelledBy(actorId);
+
+        Order savedOrder = orderRepository.save(order);
+        
+        // Sincronización con pagos: cancelar pagos activos
+        try {
+            paymentService.cancelActivePaymentsForOrder(
+                    savedOrder.getId(),
+                    "Pago cancelado automáticamente porque la orden fue cancelada.",
+                    source,
+                    actorId
+            );
+        } catch (Exception e) {
+            log.error("No se pudieron cancelar pagos activos asociados a la orden cancelada. orderId={}, source={}, actorUserId={}", 
+                      savedOrder.getId(), source, actorId, e);
+        }
+
+        // Auditoría
+        try {
+            Map<String, Object> oldValues = new HashMap<>();
+            oldValues.put("status", oldStatus.name());
+            Map<String, Object> newValues = new HashMap<>();
+            newValues.put("status", OrderStatus.CANCELLED.name());
+            newValues.put("cancelSource", source);
+            newValues.put("cancellationReason", reason);
+
+            auditLogService.log(
+                    "ORDER_CANCELLED", "ORDER_STATUS_CHANGE", "ORDER",
+                    orderId, oldValues, newValues, "INFO", true);
+        } catch (Exception auditEx) {
+            log.warn("⚠️ No se pudo registrar audit log para cancelación de orden {}: {}",
+                    orderId, auditEx.getMessage());
+        }
+
+        return convertToDTO(savedOrder);
+    }
+
     // ==================== ACTUALIZAR ESTADOS ====================
 
     /**
@@ -216,6 +417,21 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
         log.info("updateOrderStatus — estado actualizado de {} a {} para orden {}", oldStatus, newStatus, orderId);
+
+        // Sincronización con pagos: cancelar pagos activos si la orden fue cancelada
+        if (newStatus == OrderStatus.CANCELLED) {
+            try {
+                paymentService.cancelActivePaymentsForOrder(
+                        savedOrder.getId(),
+                        "Pago cancelado automáticamente porque la orden fue cancelada.",
+                        "ADMIN_STATUS_UPDATE",
+                        null // No tenemos actorId en la firma actual de updateOrderStatus
+                );
+            } catch (Exception e) {
+                log.error("No se pudieron cancelar pagos activos asociados a la orden cancelada. orderId={}, source={}, actorUserId={}, newStatus={}", 
+                          savedOrder.getId(), "ADMIN_STATUS_UPDATE", null, newStatus, e);
+            }
+        }
 
         // Auditoría de cambio de estado
         try {
@@ -389,6 +605,17 @@ public class OrderService {
         dto.setPaymentMethod(order.getPaymentMethod());
         dto.setTransactionId(order.getTransactionId());
 
+        // Comprobante
+        com.security.entity.PaymentProof proof = paymentProofRepository.findTopByOrderIdOrderByCreatedAtDesc(order.getId()).orElse(null);
+        if (proof != null) {
+            dto.setHasPaymentProof(true);
+            dto.setPaymentProofStatus(proof.getStatus().name());
+            dto.setPaymentProofUploadedAt(proof.getCreatedAt());
+            dto.setPaymentProofRejectionReason(proof.getRejectionReason());
+        } else {
+            dto.setHasPaymentProof(false);
+        }
+
         // Envío
         dto.setShippingAddress(order.getShippingAddress());
         dto.setBillingAddress(order.getBillingAddress());
@@ -407,6 +634,8 @@ public class OrderService {
         dto.setNotes(order.getNotes());
         dto.setCustomerNotes(order.getCustomerNotes());
         dto.setCancellationReason(order.getCancellationReason());
+        dto.setCancelledBy(order.getCancelledBy());
+        dto.setCancelSource(order.getCancelSource());
 
         // Fechas
         dto.setCreatedAt(order.getCreatedAt());

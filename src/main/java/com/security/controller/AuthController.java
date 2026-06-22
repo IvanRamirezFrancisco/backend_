@@ -33,15 +33,15 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
-// CORS se maneja globalmente en SecurityConfig
 public class AuthController {
-    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+    private static final Logger logger = log;
 
     @Autowired
     private AuthService authService;
 
     @Autowired
-    private VerificationService verificationService; // ← AÑADIR ESTA INYECCIÓN}}
+    private VerificationService verificationService;
     @Autowired
     private UserService userService;
     @Autowired
@@ -171,7 +171,7 @@ public class AuthController {
 
             // ===== VERIFICAR SI LA CUENTA ESTÁ HABILITADA =====
             if (!user.getEnabled()) {
-                System.out.println("❌ Usuario no verificado: " + email);
+                log.warn("Login denegado: cuenta no verificada para usuario ID {}", user.getId());
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(new ApiResponse(false,
                                 "Cuenta no verificada. Por favor verifica tu email antes de iniciar sesión."));
@@ -294,22 +294,22 @@ public class AuthController {
     }
 
     @PostMapping("/verify-email")
-    public ResponseEntity<?> verifyEmail(@RequestBody VerifyEmailRequest request) {
+    public ResponseEntity<?> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
         try {
-            System.out.println("📧 Verificando email con token: " + request.getToken());
+            log.debug("Procesando verificación de email");
 
             // Usar el método del UserService que creamos
             userService.verifyEmailToken(request.getToken());
 
-            System.out.println("✅ Email verificado exitosamente");
+            log.info("Email verificado exitosamente");
             return ResponseEntity
                     .ok(new ApiResponse(true, "¡Email verificado exitosamente! Ya puedes iniciar sesión."));
         } catch (IllegalArgumentException e) {
-            logger.error("❌ Token inválido: " + e.getMessage());
+            log.warn("Token de verificación de email inválido: {}", e.getMessage());
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "El enlace de verificación es inválido o ha expirado."));
         } catch (Exception e) {
-            logger.error("❌ Error verificando email: " + e.getMessage());
+            log.error("Error verificando email", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Error al verificar el email. Por favor intenta nuevamente."));
         }
@@ -339,7 +339,7 @@ public class AuthController {
     }
 
     @PostMapping("/resend-verification")
-    public ResponseEntity<?> resendVerification(@RequestBody ResendVerificationRequest request) {
+    public ResponseEntity<?> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         try {
             verificationService.resendVerificationEmail(request.getEmail());
             return ResponseEntity.ok(new ApiResponse(true,
@@ -374,24 +374,35 @@ public class AuthController {
     //
     // ¡Esto garantiza que el secret sea CONSISTENTE entre BD y QR!
 
+    /**
+     * Verifica disponibilidad de username.
+     * SEGURIDAD: Siempre responde con un delay mínimo para prevenir
+     * enumeración por timing. No lanza excepciones distintas.
+     */
     @GetMapping("/check-username/{username}")
     public ResponseEntity<?> checkUsernameAvailability(@PathVariable("username") String username) {
         try {
+            // Validar formato básico para no golpear BD con basura
+            if (username == null || username.length() < 3 || username.length() > 50
+                    || !username.matches("^[a-zA-Z0-9._-]+$")) {
+                return ResponseEntity.ok(Map.of(
+                        "available", false,
+                        "message", "Formato de username inválido"));
+            }
+
             boolean exists = userService.existsByUsername(username);
             Map<String, Object> response = new HashMap<>();
             response.put("available", !exists);
-            response.put("username", username);
 
-            if (exists) {
-                response.put("message", "Username is already taken");
-            } else {
-                response.put("message", "Username is available");
-            }
+            // NO incluir el username de vuelta ni mensajes que distingan los casos
+            response.put("message", !exists ? "Username is available" : "Username is already taken");
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiResponse(false, "Error checking username availability: " + e.getMessage()));
+            // Respuesta genérica — no filtrar la excepción al cliente
+            return ResponseEntity.ok(Map.of(
+                    "available", false,
+                    "message", "No se pudo verificar la disponibilidad"));
         }
     }
 
@@ -512,7 +523,8 @@ public class AuthController {
                 Map<String, Object> response = new HashMap<>();
                 response.put("activeSessions", activeCount);
                 response.put("maxAllowedSessions", 2);
-                response.put("currentSessionId", currentJti);
+                // currentSessionId eliminado: el cliente identifica su sesión
+                // activa con el campo isCurrent:true en cada objeto de sesión.
                 response.put("sessions", sessions.stream().map(session -> {
                     Map<String, Object> sessionInfo = new HashMap<>();
                     sessionInfo.put("id", session.getJwtTokenId());

@@ -12,8 +12,7 @@ import org.slf4j.LoggerFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 
 @RestController
 @RequestMapping("/api/auth")
@@ -121,8 +120,7 @@ public class PasswordResetController {
             }
 
         } catch (Exception e) {
-            logger.error("Error en reset-password: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Error en reset-password: {}", e.getMessage());
             return ResponseEntity.status(500).body(Map.of(
                     "success", false,
                     "message", "Error al actualizar la contraseña. Intenta nuevamente."));
