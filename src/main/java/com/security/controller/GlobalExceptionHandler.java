@@ -194,6 +194,28 @@ public class GlobalExceptionHandler {
         }
 
         /**
+         * Maneja excepciones de violación de jerarquía de roles o del Protected Owner.
+         * HTTP 403 - FORBIDDEN
+         */
+        @ExceptionHandler(com.security.exception.SecurityHierarchyException.class)
+        public ResponseEntity<ErrorResponse> handleSecurityHierarchyException(
+                        com.security.exception.SecurityHierarchyException ex, WebRequest request) {
+
+                log.warn("🛡️ Jerarquía de seguridad violada: {}", ex.getMessage());
+
+                ErrorResponse error = ErrorResponse.builder()
+                                .timestamp(LocalDateTime.now())
+                                .status(HttpStatus.FORBIDDEN.value())
+                                .error("Hierarchy Violation")
+                                .message(ex.getMessage())
+                                .path(request.getDescription(false).replace("uri=", ""))
+                                .details(Map.of("type", "SECURITY_HIERARCHY_VIOLATION"))
+                                .build();
+
+                return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        }
+
+        /**
          * Maneja errores de validación de datos (jakarta.validation)
          * HTTP 400 - BAD REQUEST
          */

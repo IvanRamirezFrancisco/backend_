@@ -6,8 +6,9 @@ import com.security.enums.PaymentStatus;
 import com.security.enums.ShippingStatus;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -28,7 +29,8 @@ import java.util.List;
         @Index(name = "idx_order_date", columnList = "created_at"),
         @Index(name = "idx_payment_status", columnList = "payment_status")
 })
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class Order {
@@ -151,4 +153,13 @@ public class Order {
                 .add(shipping != null ? shipping : BigDecimal.ZERO)
                 .subtract(discount != null ? discount : BigDecimal.ZERO);
     }
+    
+    // Explicit getters and setters to bypass Lombok issues
+    public User getUser() { return user; }
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+    public OrderStatus getStatus() { return status; }
+    public PaymentStatus getPaymentStatus() { return paymentStatus; }
+    public Long getId() { return id; }
+    public String getOrderNumber() { return orderNumber; }
+    public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus; }
 }

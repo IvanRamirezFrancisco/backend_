@@ -98,6 +98,30 @@ public interface UserRepository extends JpaRepository<User, Long> {
                         org.springframework.data.domain.Pageable pageable);
 
         /**
+         * Buscar usuarios Staff paginados (exclusivo para Store Manager: oculta roles técnicos)
+         */
+        @EntityGraph(attributePaths = { "roles" })
+        @Query("SELECT u FROM User u WHERE u.isCustomer = false AND NOT EXISTS (SELECT r FROM u.roles r WHERE r.name IN ('ROLE_SUPER_ADMIN', 'ROLE_ADMIN', 'ROLE_PROJECT_ADMIN', 'ROLE_STORE_MANAGER')) ORDER BY u.createdAt DESC")
+        org.springframework.data.domain.Page<User> findOperationalStaff(org.springframework.data.domain.Pageable pageable);
+
+        /**
+         * Buscar usuarios Staff operativos con filtros (exclusivo para Store Manager)
+         */
+        @EntityGraph(attributePaths = { "roles" })
+        @Query("SELECT u FROM User u WHERE u.isCustomer = false AND NOT EXISTS (SELECT r FROM u.roles r WHERE r.name IN ('ROLE_SUPER_ADMIN', 'ROLE_ADMIN', 'ROLE_PROJECT_ADMIN', 'ROLE_STORE_MANAGER')) AND " +
+                        "(:enabled IS NULL OR u.enabled = :enabled) AND " +
+                        "(:accountNonLocked IS NULL OR u.accountNonLocked = :accountNonLocked) AND " +
+                        "(LOWER(u.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+                        "LOWER(u.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+                        "LOWER(u.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) " +
+                        "ORDER BY u.createdAt DESC")
+        org.springframework.data.domain.Page<User> findOperationalStaffWithFilters(
+                        @Param("searchTerm") String searchTerm,
+                        @Param("enabled") Boolean enabled,
+                        @Param("accountNonLocked") Boolean accountNonLocked,
+                        org.springframework.data.domain.Pageable pageable);
+
+        /**
          * Contar usuarios Staff activos
          */
         @Query("SELECT COUNT(u) FROM User u WHERE u.isCustomer = false AND u.enabled = true")

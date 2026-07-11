@@ -20,6 +20,7 @@ public class UserResponse {
     private Boolean googleAuthEnabled;
     private Boolean emailEnabled;
     private Boolean backupCodesEnabled;
+    private Boolean protectedOwner;
 
     // nuevos para ocultar boton de google authS
     public Boolean getGoogleAuthEnabled() {
@@ -44,6 +45,14 @@ public class UserResponse {
 
     public void setBackupCodesEnabled(Boolean backupCodesEnabled) {
         this.backupCodesEnabled = backupCodesEnabled;
+    }
+
+    public Boolean getProtectedOwner() {
+        return protectedOwner;
+    }
+
+    public void setProtectedOwner(Boolean protectedOwner) {
+        this.protectedOwner = protectedOwner;
     }
 
     // Constructors

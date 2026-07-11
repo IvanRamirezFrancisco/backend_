@@ -40,8 +40,8 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class PaymentProofService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PaymentProofService.class);
 
     private final PaymentProofRepository paymentProofRepository;
     private final OrderRepository orderRepository;
@@ -408,5 +408,12 @@ public class PaymentProofService {
                 .build();
     }
     
-    private record ValidationResult(String mimeType, String extension) {}
+    private static class ValidationResult {
+        public final String mimeType;
+        public final String extension;
+        public ValidationResult(String mimeType, String extension) {
+            this.mimeType = mimeType;
+            this.extension = extension;
+        }
+    }
 }

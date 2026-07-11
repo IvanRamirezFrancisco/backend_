@@ -40,6 +40,7 @@ public class UserService {
     @Autowired
     private RoleRepository roleRepository;
 
+
     @Autowired
     private PasswordEncoder passwordEncoder;
 
@@ -50,6 +51,9 @@ public class UserService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private AdminHierarchyService adminHierarchyService;
 
     /**
      * Patrón UPSERT anti-enumeración para registro de usuarios.
@@ -297,6 +301,7 @@ public class UserService {
 
     public User updateUser(Long userId, User updatedUser) {
         User user = getUserById(userId);
+        assertCanActOn(user, "UPDATE");
 
         if (updatedUser.getFirstName() != null) {
             user.setFirstName(updatedUser.getFirstName());
@@ -314,11 +319,13 @@ public class UserService {
 
     public void deleteUser(Long userId) {
         User user = getUserById(userId);
+        assertCanActOn(user, "DELETE");
         userRepository.delete(user);
     }
 
     public void enableUser(Long userId) {
         User user = getUserById(userId);
+        assertCanActOn(user, "ENABLE");
         user.setEnabled(true);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
@@ -334,6 +341,7 @@ public class UserService {
 
     public void disableUser(Long userId) {
         User user = getUserById(userId);
+        assertCanActOn(user, "DISABLE");
         user.setEnabled(false);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
@@ -349,6 +357,7 @@ public class UserService {
 
     public void changePassword(Long userId, String newPassword) {
         User user = getUserById(userId);
+        assertCanActOn(user, "PASSWORD");
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setCredentialsNonExpired(true);
         user.setUpdatedAt(LocalDateTime.now());
@@ -365,6 +374,7 @@ public class UserService {
 
     public void enableTwoFactor(Long userId, String secret) {
         User user = getUserById(userId);
+        assertCanActOn(user, "UPDATE");
         user.setTwoFactorEnabled(true);
         user.setTwoFactorSecret(secret);
         user.setUpdatedAt(LocalDateTime.now());
@@ -373,6 +383,7 @@ public class UserService {
 
     public void disableTwoFactor(Long userId) {
         User user = getUserById(userId);
+        assertCanActOn(user, "RESET_2FA");
         user.setTwoFactorEnabled(false);
         user.setTwoFactorSecret(null);
         user.setUpdatedAt(LocalDateTime.now());
@@ -404,6 +415,7 @@ public class UserService {
     public UserResponse convertToUserResponse(User user) {
         UserResponse userResponse = new UserResponse();
         userResponse.setId(user.getId());
+        userResponse.setProtectedOwner(adminHierarchyService.isProtectedOwner(user));
         userResponse.setFirstName(user.getFirstName());
         userResponse.setLastName(user.getLastName());
         userResponse.setEmail(user.getEmail());
@@ -434,6 +446,29 @@ public class UserService {
         userResponse.setIsCustomer(user.getIsCustomer());
 
         return userResponse;
+    }
+
+    private void assertCanActOn(User targetUser, String action) {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || "anonymousUser".equals(auth.getName()) || "SYSTEM".equals(auth.getName())) {
+            return; // Internal call
+        }
+        
+        String email = auth.getName();
+        User actor = userRepository.findByEmail(email).orElse(null);
+        if (actor != null) {
+            if ("DELETE".equals(action)) {
+                adminHierarchyService.assertCanDeleteUser(actor, targetUser);
+            } else if ("DISABLE".equals(action)) {
+                adminHierarchyService.assertCanDisableUser(actor, targetUser);
+            } else if ("RESET_2FA".equals(action)) {
+                adminHierarchyService.assertCanResetTwoFactor(actor, targetUser);
+            } else if ("PASSWORD".equals(action)) {
+                adminHierarchyService.assertCanChangePasswordAdmin(actor, targetUser);
+            } else {
+                adminHierarchyService.assertCanManageUser(actor, targetUser);
+            }
+        }
     }
 
     // ===== MÉTODOS PARA ADMINISTRACIÓN =====

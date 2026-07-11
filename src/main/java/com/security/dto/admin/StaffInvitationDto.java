@@ -28,7 +28,7 @@ public class StaffInvitationDto {
     /**
      * Factory method para convertir entidad a DTO.
      */
-    public static StaffInvitationDto fromEntity(StaffInvitation entity, List<String> roleNames) {
+    public static StaffInvitationDto fromEntity(StaffInvitation entity, List<String> roleNames, String invitedByNameOverride) {
         StaffInvitationDto dto = new StaffInvitationDto();
         dto.setId(entity.getId());
         dto.setEmail(entity.getEmail());
@@ -40,12 +40,17 @@ public class StaffInvitationDto {
         dto.setExpiresAt(entity.getExpiresAt());
         dto.setAcceptedAt(entity.getAcceptedAt());
 
-        // Nombre del invitador
-        if (entity.getInvitedBy() != null) {
+        if (invitedByNameOverride != null) {
+            dto.setInvitedByName(invitedByNameOverride);
+        } else if (entity.getInvitedBy() != null) {
             dto.setInvitedByName(
                     entity.getInvitedBy().getFirstName() + " " + entity.getInvitedBy().getLastName());
         }
         return dto;
+    }
+
+    public static StaffInvitationDto fromEntity(StaffInvitation entity, List<String> roleNames) {
+        return fromEntity(entity, roleNames, null);
     }
 
     // ── Getters y Setters ───────────────────────────────────────

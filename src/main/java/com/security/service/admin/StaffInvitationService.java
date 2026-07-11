@@ -58,6 +58,9 @@ public class StaffInvitationService {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Autowired
+    private com.security.service.RolePolicyService rolePolicyService;
+
     // ══════════════════════════════════════════════════════════════
     // CREAR INVITACIÓN
     // ══════════════════════════════════════════════════════════════
@@ -99,13 +102,24 @@ public class StaffInvitationService {
                     "Solo un Super Administrador puede invitar usuarios con el rol SUPER_ADMIN.");
         }
 
+        // Obtener usuario invitador
+        User invitedBy = userRepo.findByEmail(auth.getName())
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario invitador no encontrado"));
+
+        // Validar que el STORE_MANAGER no asigne roles técnicos
+        if (rolePolicyService.isStoreManager(invitedBy) && !rolePolicyService.isTechnicalUser(invitedBy)) {
+            boolean assignsTechnical = roles.stream()
+                    .anyMatch(r -> rolePolicyService.isTechnicalRole(r.getName()) || "ROLE_STORE_MANAGER".equals(r.getName()) || "ROLE_PROJECT_ADMIN".equals(r.getName()));
+            if (assignsTechnical) {
+                throw new com.security.exception.SecurityHierarchyException("No tienes permiso para invitar a usuarios con roles técnicos o gerenciales.");
+            }
+        }
+
         // 5. Generar token seguro (256 bits) y hash para almacenamiento
         String token = generateSecureToken();
         String tokenHash = hashToken(token);
 
-        // 6. Obtener invitador
-        User invitedBy = userRepo.findByEmail(auth.getName())
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario invitador no encontrado"));
+        // 6. Generar token seguro (256 bits) y hash para almacenamiento
 
         // 7. Crear y guardar invitación (solo se persiste el HASH, nunca el token
         // plano)
@@ -275,28 +289,48 @@ public class StaffInvitationService {
     // ══════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
-    public List<StaffInvitationDto> listAllInvitations() {
+    public List<StaffInvitationDto> listAllInvitations(Authentication auth) {
+        User actor = userRepo.findByEmail(auth.getName()).orElse(null);
+        boolean isStoreManager = rolePolicyService.isStoreManager(actor) && !rolePolicyService.isTechnicalUser(actor);
+
         List<StaffInvitation> invitations = invitationRepo.findAllByOrderByCreatedAtDesc();
-        return invitations.stream()
-                .map(inv -> {
-                    List<String> roleNames = resolveRoleNames(inv.getRoleIds());
-                    return StaffInvitationDto.fromEntity(inv, roleNames);
-                })
-                .collect(Collectors.toList());
+        return filterAndMapInvitations(invitations, isStoreManager, actor);
     }
 
     @Transactional(readOnly = true)
-    public List<StaffInvitationDto> listPendingInvitations() {
+    public List<StaffInvitationDto> listPendingInvitations(Authentication auth) {
+        User actor = userRepo.findByEmail(auth.getName()).orElse(null);
+        boolean isStoreManager = rolePolicyService.isStoreManager(actor) && !rolePolicyService.isTechnicalUser(actor);
+
         List<StaffInvitation> invitations = invitationRepo
                 .findByStatusOrderByCreatedAtDesc(InvitationStatus.PENDING);
+        return filterAndMapInvitations(invitations, isStoreManager, actor);
+    }
+
+    private List<StaffInvitationDto> filterAndMapInvitations(List<StaffInvitation> invitations, boolean isStoreManager, User actor) {
         return invitations.stream()
+                .filter(inv -> {
+                    if (isStoreManager) {
+                        List<String> roleNames = resolveRoleNames(inv.getRoleIds());
+                        boolean hasTechnical = roleNames.stream().anyMatch(r -> rolePolicyService.isTechnicalRole(r) || "ROLE_STORE_MANAGER".equals(r) || "ROLE_PROJECT_ADMIN".equals(r) || "ROLE_USER".equals(r));
+                        return !hasTechnical;
+                    }
+                    return true;
+                })
                 .map(inv -> {
-                    // Marcar como expirada en el DTO si ya venció
-                    if (inv.isExpired()) {
+                    if (inv.isExpired() && inv.getStatus() == InvitationStatus.PENDING) {
                         inv.setStatus(InvitationStatus.EXPIRED);
                     }
                     List<String> roleNames = resolveRoleNames(inv.getRoleIds());
-                    return StaffInvitationDto.fromEntity(inv, roleNames);
+                    String maskedInvitedBy = null;
+                    if (isStoreManager) {
+                        if (inv.getInvitedBy() != null && inv.getInvitedBy().getId().equals(actor.getId())) {
+                            maskedInvitedBy = "Tú";
+                        } else {
+                            maskedInvitedBy = "Sistema";
+                        }
+                    }
+                    return StaffInvitationDto.fromEntity(inv, roleNames, maskedInvitedBy);
                 })
                 .collect(Collectors.toList());
     }
@@ -309,6 +343,15 @@ public class StaffInvitationService {
     public void cancelInvitation(Long invitationId, Authentication auth) {
         StaffInvitation inv = invitationRepo.findById(invitationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invitación no encontrada"));
+
+        User actor = userRepo.findByEmail(auth.getName()).orElse(null);
+        if (rolePolicyService.isStoreManager(actor) && !rolePolicyService.isTechnicalUser(actor)) {
+            List<String> roleNames = resolveRoleNames(inv.getRoleIds());
+            boolean hasTechnical = roleNames.stream().anyMatch(r -> rolePolicyService.isTechnicalRole(r) || "ROLE_STORE_MANAGER".equals(r) || "ROLE_PROJECT_ADMIN".equals(r));
+            if (hasTechnical) {
+                throw new com.security.exception.SecurityHierarchyException("No tienes permiso para modificar esta invitación técnica.");
+            }
+        }
 
         if (inv.getStatus() != InvitationStatus.PENDING) {
             throw new IllegalStateException("Solo se pueden cancelar invitaciones pendientes.");
@@ -338,6 +381,15 @@ public class StaffInvitationService {
     public void resendInvitation(Long invitationId, Authentication auth) {
         StaffInvitation inv = invitationRepo.findById(invitationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invitación no encontrada"));
+
+        User actor = userRepo.findByEmail(auth.getName()).orElse(null);
+        if (rolePolicyService.isStoreManager(actor) && !rolePolicyService.isTechnicalUser(actor)) {
+            List<String> roleNames = resolveRoleNames(inv.getRoleIds());
+            boolean hasTechnical = roleNames.stream().anyMatch(r -> rolePolicyService.isTechnicalRole(r) || "ROLE_STORE_MANAGER".equals(r) || "ROLE_PROJECT_ADMIN".equals(r));
+            if (hasTechnical) {
+                throw new com.security.exception.SecurityHierarchyException("No tienes permiso para modificar esta invitación técnica.");
+            }
+        }
 
         if (inv.getStatus() == InvitationStatus.ACCEPTED) {
             throw new IllegalStateException("Esta invitación ya fue aceptada.");

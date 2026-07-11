@@ -14,17 +14,18 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/admin/payment-settings/bank-transfer")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('SYSTEM_SETTINGS')")
 public class BankTransferSettingsController {
 
     private final BankTransferSettingsService bankTransferSettingsService;
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('SYSTEM_SETTINGS', 'BANK_TRANSFER_SETTINGS_READ', 'PAYMENT_SETTINGS_READ', 'BANK_TRANSFER_SETTINGS_UPDATE', 'PAYMENT_SETTINGS_UPDATE')")
     public ResponseEntity<BankTransferSettingsResponse> getSettings() {
         return ResponseEntity.ok(bankTransferSettingsService.getAdminSettings());
     }
 
     @PutMapping
+    @PreAuthorize("hasAnyAuthority('SYSTEM_SETTINGS', 'BANK_TRANSFER_SETTINGS_UPDATE', 'PAYMENT_SETTINGS_UPDATE')")
     public ResponseEntity<BankTransferSettingsResponse> updateSettings(
             @AuthenticationPrincipal UserPrincipal userDetails,
             @Valid @RequestBody BankTransferSettingsRequest request) {

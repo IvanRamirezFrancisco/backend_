@@ -30,6 +30,9 @@ public class Role {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "is_system_role")
+    private Boolean isSystemRole = false;
+
     @ManyToMany(mappedBy = "roles", fetch = FetchType.LAZY)
     private Set<User> users = new HashSet<>();
 
@@ -88,6 +91,14 @@ public class Role {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Boolean getIsSystemRole() {
+        return isSystemRole;
+    }
+
+    public void setIsSystemRole(Boolean isSystemRole) {
+        this.isSystemRole = isSystemRole;
     }
 
     public Set<User> getUsers() {

@@ -50,6 +50,9 @@ public class AuthService {
     private TwoFactorService twoFactorService;
 
     @Autowired
+    private com.security.service.AdminHierarchyService adminHierarchyService;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -143,6 +146,7 @@ public class AuthService {
     public UserResponse convertToUserResponse(User user) {
         UserResponse userResponse = new UserResponse();
         userResponse.setId(user.getId());
+        userResponse.setProtectedOwner(adminHierarchyService.isProtectedOwner(user));
         userResponse.setFirstName(user.getFirstName());
         userResponse.setLastName(user.getLastName());
         userResponse.setEmail(user.getEmail());

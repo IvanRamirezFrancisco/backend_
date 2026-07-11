@@ -47,4 +47,12 @@ public class SlugUtils {
         }
         return "casa-musica/marcas/" + brandId + "-" + slug;
     }
+
+    public static String buildCategoryFolder(Long categoryId, String categoryName) {
+        String slug = toSlug(categoryName);
+        if (slug.isEmpty()) {
+            slug = "categoria-" + categoryId;
+        }
+        return "casa-musica/categorias/" + categoryId + "-" + slug;
+    }
 }

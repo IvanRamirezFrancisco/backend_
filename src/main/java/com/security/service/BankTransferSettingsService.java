@@ -11,6 +11,7 @@ import com.security.exception.ResourceNotFoundException;
 import com.security.repository.BankTransferSettingsRepository;
 import com.security.repository.OrderRepository;
 import com.security.repository.UserRepository;
+import com.security.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ public class BankTransferSettingsService {
     private final BankTransferSettingsRepository bankTransferSettingsRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     @Transactional(readOnly = true)
     public BankTransferSettingsResponse getAdminSettings() {
@@ -75,6 +77,14 @@ public class BankTransferSettingsService {
         }
 
         BankTransferSettings saved = bankTransferSettingsRepository.save(settings);
+        
+        auditLogService.logAction(
+                "UPDATE_BANK_SETTINGS",
+                "PAYMENT",
+                adminId,
+                "Actualización de configuración de transferencia bancaria"
+        );
+        
         return mapToResponse(saved);
     }
 

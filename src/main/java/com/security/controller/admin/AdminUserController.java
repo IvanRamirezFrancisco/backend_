@@ -254,4 +254,14 @@ public class AdminUserController {
 
         return new ResponseEntity<>(csv, headers, HttpStatus.OK);
     }
+
+    /**
+     * GET /api/admin/staff/assignable-roles
+     * Obtiene los roles que el usuario autenticado puede asignar en el contexto técnico.
+     */
+    @GetMapping("/assignable-roles")
+    @PreAuthorize("hasAuthority('USER_READ')")
+    public ResponseEntity<java.util.List<com.security.dto.admin.AssignableRoleDTO>> getAssignableRoles() {
+        return ResponseEntity.ok(adminUserService.getAssignableRoles());
+    }
 }

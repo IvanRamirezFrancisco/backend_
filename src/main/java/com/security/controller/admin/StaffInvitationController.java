@@ -31,8 +31,8 @@ public class StaffInvitationController {
      */
     @GetMapping
     @PreAuthorize("hasAuthority('USER_READ')")
-    public ResponseEntity<List<StaffInvitationDto>> listAll() {
-        List<StaffInvitationDto> invitations = invitationService.listAllInvitations();
+    public ResponseEntity<List<StaffInvitationDto>> listAll(Authentication auth) {
+        List<StaffInvitationDto> invitations = invitationService.listAllInvitations(auth);
         return ResponseEntity.ok(invitations);
     }
 
@@ -42,8 +42,8 @@ public class StaffInvitationController {
      */
     @GetMapping("/pending")
     @PreAuthorize("hasAuthority('USER_READ')")
-    public ResponseEntity<List<StaffInvitationDto>> listPending() {
-        List<StaffInvitationDto> invitations = invitationService.listPendingInvitations();
+    public ResponseEntity<List<StaffInvitationDto>> listPending(Authentication auth) {
+        List<StaffInvitationDto> invitations = invitationService.listPendingInvitations(auth);
         return ResponseEntity.ok(invitations);
     }
 

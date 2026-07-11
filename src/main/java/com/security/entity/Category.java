@@ -42,6 +42,12 @@ public class Category {
     @Column(name = "image_url")
     private String imageUrl;
 
+    @Column(name = "image_public_id")
+    private String imagePublicId;
+
+    @Column(name = "image_provider", length = 50)
+    private String imageProvider;
+
     @Column(nullable = false)
     private Boolean active = true;
 

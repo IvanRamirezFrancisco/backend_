@@ -4,7 +4,8 @@ import com.security.enums.PaymentProofStatus;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -18,7 +19,8 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "payment_proofs", schema = "sales")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentProof {
@@ -88,4 +90,40 @@ public class PaymentProof {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+    
+    // Explicit getters and setters
+    public void setOrder(Order order) { this.order = order; }
+    public void setUploadedBy(User uploadedBy) { this.uploadedBy = uploadedBy; }
+    public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
+    public void setStoredFilename(String storedFilename) { this.storedFilename = storedFilename; }
+    public void setStoragePath(String storagePath) { this.storagePath = storagePath; }
+    public void setContentType(String contentType) { this.contentType = contentType; }
+    public void setFileSizeBytes(Long fileSizeBytes) { this.fileSizeBytes = fileSizeBytes; }
+    public void setReferenceNumber(String referenceNumber) { this.referenceNumber = referenceNumber; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
+    public void setAmountDeclared(BigDecimal amountDeclared) { this.amountDeclared = amountDeclared; }
+    public void setTransferDate(LocalDate transferDate) { this.transferDate = transferDate; }
+    public void setNotes(String notes) { this.notes = notes; }
+    public void setStatus(PaymentProofStatus status) { this.status = status; }
+    public void setReviewedBy(User reviewedBy) { this.reviewedBy = reviewedBy; }
+    public void setReviewedAt(LocalDateTime reviewedAt) { this.reviewedAt = reviewedAt; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+    
+    public Long getId() { return id; }
+    public Order getOrder() { return order; }
+    public User getUploadedBy() { return uploadedBy; }
+    public String getOriginalFilename() { return originalFilename; }
+    public String getContentType() { return contentType; }
+    public Long getFileSizeBytes() { return fileSizeBytes; }
+    public PaymentProofStatus getStatus() { return status; }
+    public String getReferenceNumber() { return referenceNumber; }
+    public String getBankName() { return bankName; }
+    public BigDecimal getAmountDeclared() { return amountDeclared; }
+    public LocalDate getTransferDate() { return transferDate; }
+    public String getNotes() { return notes; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getReviewedAt() { return reviewedAt; }
+    public String getRejectionReason() { return rejectionReason; }
+    public String getStoredFilename() { return storedFilename; }
+    public String getStoragePath() { return storagePath; }
 }

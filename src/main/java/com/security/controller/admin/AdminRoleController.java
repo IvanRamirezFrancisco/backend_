@@ -69,7 +69,7 @@ public class AdminRoleController {
     }
 
     /**
-     * GET /api/admin/permissions/by-category - Obtener permisos agrupados por
+     * GET /api/admin/roles/permissions/by-category - Obtener permisos agrupados por
      * categoría
      * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN
      */
@@ -77,6 +77,18 @@ public class AdminRoleController {
     @PreAuthorize("hasAuthority('PERMISSION_READ')")
     public ResponseEntity<Map<String, List<PermissionDTO>>> getPermissionsByCategory() {
         Map<String, List<PermissionDTO>> permissionsByCategory = adminRoleService.getPermissionsByCategory();
+        return ResponseEntity.ok(permissionsByCategory);
+    }
+
+    /**
+     * GET /api/admin/roles/assignable-permissions-by-category
+     * Obtener permisos asignables para el actor actual, filtrando críticos y ownerOnly si no es owner.
+     * Requiere: ROLE_ADMIN o ROLE_SUPER_ADMIN
+     */
+    @GetMapping("/assignable-permissions-by-category")
+    @PreAuthorize("hasAuthority('PERMISSION_READ')")
+    public ResponseEntity<Map<String, List<PermissionDTO>>> getAssignablePermissionsByCategory() {
+        Map<String, List<PermissionDTO>> permissionsByCategory = adminRoleService.getAssignablePermissionsByCategory();
         return ResponseEntity.ok(permissionsByCategory);
     }
 
